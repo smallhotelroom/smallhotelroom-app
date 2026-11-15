@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * @file scripts/build-icons.mjs
- * @version 1.3.0
- * Generates Web (public/favicon.svg), Android (mipmap-*), and Tauri Desktop (src-tauri/icons/*)
- * icons from the single source of truth: shr-logo.svg.
+ * @version 2.0.0
+ * Generates Web (public/favicon.svg), Google Play 512x512 icon (public/playstore-icon-512.png),
+ * Android (mipmap-*), and Tauri Desktop (src-tauri/icons/*) icons from shr-logo.svg.
+ * Bakes in the calibrated optical defaults (zoom=1.06, dx=-3.5, dy=-1 on anchor 138.5, 148.0).
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,7 +12,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const __version__ = '1.3.0';
+export const __version__ = '2.0.0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,8 +32,15 @@ const MIPMAP_TARGETS = [
     { folder: 'mipmap-xxxhdpi', legacySize: 192, adaptiveSize: 432 },
 ];
 
+// Calibrated optical defaults (--zoom=1.06 --dx=-3.5 --dy=-1)
+const DEFAULT_ANCHOR_X = 138.5;
+const DEFAULT_ANCHOR_Y = 148.0;
+const DEFAULT_ZOOM_MULTIPLIER = 1.06;
+const DEFAULT_EXTRA_DX = -3.5;
+const DEFAULT_EXTRA_DY = -1.0;
+
 function findSourceSvg() {
-    const argPath = process.argv[2];
+    const argPath = process.argv.slice(2).find((a) => !a.startsWith('-'));
     if (argPath) {
         const resolved = path.resolve(ROOT_DIR, argPath);
         if (fs.existsSync(resolved)) return resolved;
@@ -45,25 +53,33 @@ function findSourceSvg() {
     );
 }
 
-function buildPaddedSvg(rawSvg, { scaleRatio = 0.72, circleClip = false } = {}) {
+function buildPaddedSvg(
+    rawSvg,
+    {
+        scaleRatio = 0.86,
+        circleClip = false,
+        anchorX = DEFAULT_ANCHOR_X,
+        anchorY = DEFAULT_ANCHOR_Y,
+        extraDx = DEFAULT_EXTRA_DX,
+        extraDy = DEFAULT_EXTRA_DY,
+    } = {}
+) {
     const viewBoxMatch = rawSvg.match(
         /viewBox=["']\s*([-\d.]+)\s+([-\d.]+)\s+([\d.]+)\s+([\d.]+)\s*["']/i
     );
     const widthMatch = rawSvg.match(/\bwidth=["']([\d.]+)/i);
     const heightMatch = rawSvg.match(/\bheight=["']([\d.]+)/i);
 
-    const minX = viewBoxMatch ? parseFloat(viewBoxMatch[1]) : 0;
-    const minY = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 0;
     const vbW = viewBoxMatch
         ? parseFloat(viewBoxMatch[3])
         : widthMatch
           ? parseFloat(widthMatch[1])
-          : 512;
+          : 300;
     const vbH = viewBoxMatch
         ? parseFloat(viewBoxMatch[4])
         : heightMatch
           ? parseFloat(heightMatch[1])
-          : 512;
+          : 300;
 
     let inner = rawSvg
         .replace(/<\?xml[^>]*\?>/gi, '')
@@ -75,10 +91,15 @@ function buildPaddedSvg(rawSvg, { scaleRatio = 0.72, circleClip = false } = {}) 
         .replace(/<inkscape:[^>]*\/>/gi, '')
         .replace(/<inkscape:[\s\S]*?<\/inkscape:[^>]+>/gi, '')
         .replace(/<metadata[\s\S]*?<\/metadata>/gi, '')
+        .replace(/<defs[\s\S]*?<\/defs>/gi, '')
+        .replace(/<flowRoot[\s\S]*?<\/flowRoot>/gi, '')
+        .replace(/<rect[^>]*id=["']rect3875["'][^>]*\/>/gi, '')
+        .replace(/fill:#000000/gi, 'fill:#ffffff')
+        .replace(/filter:url\([^)]+\);?/gi, '')
         .replace(/\s+(?:sodipodi|inkscape):[a-zA-Z0-9_-]+="[^"]*"/gi, '');
 
-    const offsetX = (vbW * (1 - scaleRatio)) / 2 - minX * scaleRatio;
-    const offsetY = (vbH * (1 - scaleRatio)) / 2 - minY * scaleRatio;
+    const offsetX = vbW / 2 - anchorX * scaleRatio + extraDx;
+    const offsetY = vbH / 2 - anchorY * scaleRatio + extraDy;
 
     const clipDef = circleClip
         ? `<defs><clipPath id="roundClip"><circle cx="${vbW / 2}" cy="${vbH / 2}" r="${Math.min(vbW, vbH) / 2}" /></clipPath></defs>`
@@ -90,7 +111,7 @@ function buildPaddedSvg(rawSvg, { scaleRatio = 0.72, circleClip = false } = {}) 
   ${clipDef}
   <g${clipAttr}>
     <rect x="0" y="0" width="${vbW}" height="${vbH}" fill="#000000" />
-    <g transform="translate(${offsetX.toFixed(3)}, ${offsetY.toFixed(3)}) scale(${scaleRatio})" fill="#ffffff">
+    <g transform="translate(${offsetX.toFixed(3)}, ${offsetY.toFixed(3)}) scale(${scaleRatio.toFixed(4)})" fill="#ffffff">
       ${inner}
     </g>
   </g>
@@ -158,30 +179,63 @@ async function renderSvgToPng(svgString, outPngPath, sizePx) {
 
 async function main() {
     const srcSvgPath = findSourceSvg();
-    console.log(`🎨 Using source logo: ${srcSvgPath}`);
     const rawSvg = fs.readFileSync(srcSvgPath, 'utf8');
 
-    // 1. Write web favicon.svg (92% scale on solid black badge)
+    const zoomArg = process.argv.find((a) => a.startsWith('--zoom='));
+    const dxArg = process.argv.find((a) => a.startsWith('--dx='));
+    const dyArg = process.argv.find((a) => a.startsWith('--dy='));
+    const zoomMult = zoomArg
+        ? parseFloat(zoomArg.slice(7))
+        : DEFAULT_ZOOM_MULTIPLIER;
+    const extraDx = dxArg ? parseFloat(dxArg.slice(5)) : DEFAULT_EXTRA_DX;
+    const extraDy = dyArg ? parseFloat(dyArg.slice(5)) : DEFAULT_EXTRA_DY;
+
+    const shiftRightPx = 150 - DEFAULT_ANCHOR_X + extraDx;
+    const shiftDownPx = 150 - DEFAULT_ANCHOR_Y + extraDy;
+
+    console.log(
+        `🎨 Using source logo: ${srcSvgPath}\n` +
+            `   Visual anchor in 300x300 source: (${DEFAULT_ANCHOR_X}, ${DEFAULT_ANCHOR_Y})\n` +
+            `   Extra offset:                    dx=${extraDx}px, dy=${extraDy}px, zoom=${zoomMult}x\n` +
+            `   Net shift (at 1.0x):             +${shiftRightPx.toFixed(1)}px right, +${shiftDownPx.toFixed(1)}px down\n` +
+            `   Scales: Web=${(0.90 * zoomMult).toFixed(3)}, LegacySquare=${(0.86 * zoomMult).toFixed(3)}, AdaptiveForeground=${(0.63 * zoomMult).toFixed(3)}`
+    );
+
+    // 1. Write web favicon.svg
     const webFaviconSvg = buildPaddedSvg(rawSvg, {
-        scaleRatio: 0.92,
+        scaleRatio: 0.9 * zoomMult,
         circleClip: false,
+        extraDx,
+        extraDy,
     });
     const publicFaviconPath = path.join(ROOT_DIR, 'public', 'favicon.svg');
     fs.writeFileSync(publicFaviconPath, webFaviconSvg, 'utf8');
-    console.log(`✅ Updated web favicon: public/favicon.svg`);
+    console.log(`✅ Updated centered web favicon: public/favicon.svg`);
+
+    // 1b. Write 512x512 Google Play Store Icon (public/playstore-icon-512.png)
+    const playStoreSvg = buildPaddedSvg(rawSvg, {
+        scaleRatio: 0.86 * zoomMult,
+        circleClip: false,
+        extraDx,
+        extraDy,
+    });
+    const playStoreIconPath = path.join(ROOT_DIR, 'public', 'playstore-icon-512.png');
+    await renderSvgToPng(playStoreSvg, playStoreIconPath, 512);
+    console.log(`✅ Generated Google Play Store 512x512 icon: public/playstore-icon-512.png`);
 
     // 2. Prepare Android SVG variants
-    const legacySquareSvg = buildPaddedSvg(rawSvg, {
-        scaleRatio: 0.86,
-        circleClip: false,
-    });
+    const legacySquareSvg = playStoreSvg;
     const legacyRoundSvg = buildPaddedSvg(rawSvg, {
-        scaleRatio: 0.82,
+        scaleRatio: 0.82 * zoomMult,
         circleClip: true,
+        extraDx,
+        extraDy,
     });
     const adaptiveForegroundSvg = buildPaddedSvg(rawSvg, {
-        scaleRatio: 0.64,
+        scaleRatio: 0.63 * zoomMult,
         circleClip: false,
+        extraDx,
+        extraDy,
     });
 
     const androidResDir = path.join(ROOT_DIR, 'android', 'app', 'src', 'main', 'res');
@@ -248,7 +302,7 @@ async function main() {
         }
     }
 
-    console.log(`🎉 All Android, Web & Desktop icons cleanly generated from shr-logo.svg!`);
+    console.log(`🎉 All Android, Web, Play Store & Desktop icons centered & scaled!`);
 }
 
 main().catch((err) => {
