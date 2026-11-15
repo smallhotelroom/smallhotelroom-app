@@ -1,10 +1,11 @@
 # File: src-tauri/Cargo.toml
-# Version: 1.1.0
+# Version: 1.1.1
 [package]
 name = "smallhotelroom-app"
 version = "0.2.0"
 description = "Small Hotel Room Songbook, Metronome & Tuner"
 authors = ["Small Hotel Room"]
+license = "GPL-3.0-or-later"
 edition = "2021"
 
 [build-dependencies]
