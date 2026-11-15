@@ -50,6 +50,7 @@ android/.gradle/
 android/build/
 android/local.properties
 android/capacitor-cordova-android-plugins/
+android/keystore.properties
 ios/App/Pods/
 ios/App/build/
 *.apk
