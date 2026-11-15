@@ -1,5 +1,5 @@
 # File: docker-compose.yml
-# Version: 1.8.0
+# Version: 1.9.0
 services:
   android-builder:
     image: ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest
@@ -24,7 +24,7 @@ services:
           cp /opt/gradle-dist/gradle-8.11.1-all.zip /root/.gradle/wrapper/dists/gradle-8.11.1-all/2qik7nd48slq1ooc2496pTF4i/;
         fi &&
         npm run build &&
-        if [ ! -f android/capacitor.settings.gradle ]; then
+        if [ ! -f android/capacitor.settings.gradle ] || [ ! -f android/capacitor-cordova-android-plugins/cordova.variables.gradle ]; then
           npx cap sync android;
         else
           npx cap copy android;
@@ -38,7 +38,7 @@ services:
             cp -f \"$$src\" \"app/build/outputs/apk/$$type/smallhotelroom-$$type-$$ts.apk\";
           fi;
         done &&
-        chown -R $(stat -c '%u:%g' /app) /app/dist /app/android/app/src/main/assets /app/android/app/build/outputs
+        chown -R $(stat -c '%u:%g' /app) /app/dist /app/android/app/src/main/assets /app/android/app/build/outputs /app/android/capacitor-cordova-android-plugins
       "
 
 volumes:
