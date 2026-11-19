@@ -12,10 +12,22 @@ npm run linter:install
 
 ## 1. Database (`songs-official.db`)
 
-Generate the default official ("clean") SQLite database (`public/songs.db` & `dist-dbs/songs-official.db`) from `smallhotelroom.github.io` Markdown songs:
+Generate the SQLite database (`public/songs.db` & `dist-dbs/songs-official.db`) from `smallhotelroom.github.io` Markdown songs, which defaults to official ("clean") configured via `shr-config.yaml` which uses variables that can be stored in your personal `.env` (see `.env.example` for example):
 
 ```bash
 npm run db:build
+```
+
+[Optional] For single custom inputs, e.g. the following outputs dist-dbs/songs-cosecha.db with playlist "cosecha":
+
+```bash
+npm run db:build -- --input ~/jgvictoresAsrob/chords/0-GUITAR/cosecha
+```
+
+[Optional] You can also cusomize the custom output path:
+
+```bash
+npm run db:build -- --input ~/jgvictoresAsrob/chords/0-GUITAR/cosecha --output dist-dbs/my-custom.db
 ```
 
 ## 2. PDF Generator
