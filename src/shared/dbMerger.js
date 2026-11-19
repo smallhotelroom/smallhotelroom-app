@@ -1,10 +1,10 @@
 /**
  * @file src/shared/dbMerger.js
- * @version 1.8.0
+ * @version 1.9.0
  */
 import { hasCrawlerSongAndChords } from './crawlerTransposer.js';
 
-export const __version__ = '1.8.0';
+export const __version__ = '1.9.0';
 
 export const DB_SCHEMA_VERSION = '3';
 
@@ -191,6 +191,86 @@ export function wildcardToRegExp(pattern) {
     return new RegExp(`^${escaped}$`, 'i');
 }
 
+/**
+ * Re-indexes `playlists` and `playlists_songs` so that their default "Original"
+ * (autoincrement ID) order is strictly alphabetical (playlists by name, and songs
+ * within each playlist by band name then song name).
+ */
+export function sortPlaylistsAndSongsAlphabetically(db) {
+    const playlists = queryObjects(db, 'SELECT id, name, search_norm FROM playlists;');
+    if (playlists.length === 0) {
+        return;
+    }
+
+    playlists.sort((a, b) => {
+        const na = normalizeSearchText(a.search_norm || a.name);
+        const nb = normalizeSearchText(b.search_norm || b.name);
+        if (na !== nb) return na.localeCompare(nb);
+        return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+
+    const rels = queryObjects(
+        db,
+        `SELECT
+            ps.playlist_id AS playlist_id,
+            ps.song_id AS song_id,
+            b.name AS band_name,
+            s.name AS song_name
+         FROM playlists_songs ps
+         INNER JOIN songs s ON ps.song_id = s.id
+         INNER JOIN bands b ON s.band_id = b.id;`
+    );
+
+    db.run('DELETE FROM playlists_songs;');
+    db.run('DELETE FROM playlists;');
+    try {
+        db.run("DELETE FROM sqlite_sequence WHERE name IN ('playlists', 'playlists_songs');");
+    } catch {}
+
+    const oldToNewPlaylistId = new Map();
+    for (const pl of playlists) {
+        db.run('INSERT INTO playlists (name, search_norm) VALUES (?, ?);', [
+            pl.name,
+            pl.search_norm || normalizeSearchText(pl.name),
+        ]);
+        const newId = queryObjects(db, 'SELECT last_insert_rowid() AS id;')[0].id;
+        oldToNewPlaylistId.set(pl.id, newId);
+    }
+
+    const mappedRels = [];
+    for (const r of rels) {
+        const newPlId = oldToNewPlaylistId.get(r.playlist_id);
+        if (newPlId === undefined) continue;
+        mappedRels.push({
+            playlist_id: newPlId,
+            song_id: r.song_id,
+            band_norm: normalizeSearchText(r.band_name),
+            song_norm: normalizeSearchText(r.song_name),
+            band_name: String(r.band_name || ''),
+            song_name: String(r.song_name || ''),
+        });
+    }
+
+    mappedRels.sort((a, b) => {
+        if (a.playlist_id !== b.playlist_id) return a.playlist_id - b.playlist_id;
+        if (a.band_norm !== b.band_norm) return a.band_norm.localeCompare(b.band_norm);
+        if (a.song_norm !== b.song_norm) return a.song_norm.localeCompare(b.song_norm);
+        if (a.band_name !== b.band_name) return a.band_name.localeCompare(b.band_name);
+        return a.song_name.localeCompare(b.song_name);
+    });
+
+    const seen = new Set();
+    for (const r of mappedRels) {
+        const key = `${r.playlist_id}:${r.song_id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        db.run('INSERT INTO playlists_songs (playlist_id, song_id) VALUES (?, ?);', [
+            r.playlist_id,
+            r.song_id,
+        ]);
+    }
+}
+
 export function populateDatabaseMeta(
     db,
     {
@@ -248,7 +328,7 @@ export function inspectDatabase(db, fallbackName = 'custom') {
         metaMap.chord_song_count !== undefined ? Number(metaMap.chord_song_count) : null;
     let bandCount = metaMap.band_count !== undefined ? Number(metaMap.band_count) : null;
     let chordBandCount =
-        metaMap.chordBandCount !== undefined ? Number(metaMap.chord_band_count) : null;
+        metaMap.chordBandCount !== undefined ? Number(metaMap.chordBandCount) : null;
 
     if (songCount === null || bandCount === null) {
         try {
@@ -502,6 +582,7 @@ export function mergeDatabasesInPriorityOrder(SQL, sourceDbs, mergedId = 'merged
         }
     }
 
+    sortPlaylistsAndSongsAlphabetically(outDb);
     outDb.run(INDEX_SQL);
     outDb.run(UPDATE_BANDS_HAS_CHORDS_SQL);
     populateDatabaseMeta(outDb, { layerId: mergedId, packName: mergedId });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * @file scripts/build-db.mjs
- * @version 5.4.0
+ * @version 5.5.0
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,13 +17,14 @@ import {
     UPDATE_BANDS_HAS_CHORDS_SQL,
     normalizeSearchText,
     wildcardToRegExp,
+    sortPlaylistsAndSongsAlphabetically,
     populateDatabaseMeta,
     mergeDatabasesInPriorityOrder,
 } from '../src/shared/dbMerger.js';
 import { parseShrConfigYaml } from '../src/shared/shrConfig.js';
 import { hasCrawlerSongAndChords } from '../src/shared/crawlerTransposer.js';
 
-export const __version__ = '5.4.0';
+export const __version__ = '5.5.0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -858,6 +859,7 @@ function buildLayerDatabase(
         }
     }
 
+    sortPlaylistsAndSongsAlphabetically(db);
     db.run(INDEX_SQL);
     db.run(UPDATE_BANDS_HAS_CHORDS_SQL);
     populateDatabaseMeta(db, {
