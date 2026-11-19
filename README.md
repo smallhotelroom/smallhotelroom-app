@@ -18,6 +18,12 @@ Generate the SQLite database (`public/songs.db` & `dist-dbs/songs-official.db`) 
 npm run db:build
 ```
 
+[Optional] The previous command, depending on the files present in your device, can generate several database files. If you want the same command to do the same process but additionally merge them into an additional merged database at the end (slightly slower):
+
+```bash
+npm run db:build -- --merge
+```
+
 [Optional] For single custom inputs, e.g. the following outputs dist-dbs/songs-cosecha.db with playlist "cosecha":
 
 ```bash
