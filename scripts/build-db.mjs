@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * @file scripts/build-db.mjs
- * @version 5.2.0
+ * @version 5.3.0
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,7 +23,7 @@ import {
 import { parseShrConfigYaml } from '../src/shared/shrConfig.js';
 import { hasCrawlerSongAndChords } from '../src/shared/crawlerTransposer.js';
 
-export const __version__ = '5.2.0';
+export const __version__ = '5.3.0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -178,6 +178,31 @@ function resolveConfigPath(rawStr) {
     }
 
     return path.resolve(ROOT_DIR, normalized);
+}
+
+function resolveCliPath(rawStr) {
+    if (!rawStr || typeof rawStr !== 'string') {
+        return null;
+    }
+    let normalized = rawStr.trim();
+    if (normalized === '~') {
+        normalized = os.homedir();
+    } else if (normalized.startsWith('~/') || normalized.startsWith('~\\')) {
+        normalized = path.join(os.homedir(), normalized.slice(2));
+    }
+    return path.resolve(process.cwd(), normalized);
+}
+
+function getCliArgValue(args, flagName) {
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === flagName && i + 1 < args.length) {
+            return args[i + 1];
+        }
+        if (args[i].startsWith(`${flagName}=`)) {
+            return args[i].slice(flagName.length + 1);
+        }
+    }
+    return null;
 }
 
 function expandEnvString(rawStr) {
@@ -371,15 +396,22 @@ function buildLayerDatabase(
                 console.log('* ' + baseName);
 
                 const splitIdx = baseName.indexOf(' - ');
+                let bandName;
+                let songName;
                 if (splitIdx === -1) {
-                    console.log(
-                        `** Skipping ${formatClickableLocation(fullPath, 1, 1)} — Invalid filename format (missing ' - ')`
-                    );
-                    continue;
+                    if (src.defaultBand) {
+                        bandName = src.defaultBand;
+                        songName = baseName;
+                    } else {
+                        console.log(
+                            `** Skipping ${formatClickableLocation(fullPath, 1, 1)} — Invalid filename format (missing ' - ')`
+                        );
+                        continue;
+                    }
+                } else {
+                    bandName = baseName.slice(0, splitIdx);
+                    songName = baseName.slice(splitIdx + 3);
                 }
-
-                const bandName = baseName.slice(0, splitIdx);
-                const songName = baseName.slice(splitIdx + 3);
 
                 const rawText = fs.readFileSync(fullPath, 'utf8');
                 const {
@@ -863,6 +895,40 @@ async function main() {
     const args = process.argv.slice(2);
     const noCache = args.includes('--no-cache') || args.includes('--clean-cache');
     const gitCommit = getGitShortCommit();
+
+    const inputArg = getCliArgValue(args, '--input');
+    const outputArg = getCliArgValue(args, '--output');
+
+    if (inputArg) {
+        const resolvedInput = resolveCliPath(inputArg);
+        if (!resolvedInput || !fs.existsSync(resolvedInput) || !fs.statSync(resolvedInput).isDirectory()) {
+            console.error(`Error: Input directory not found: ${inputArg}`);
+            process.exit(1);
+        }
+
+        const folderName = path.basename(resolvedInput);
+        const outputPath = outputArg || path.join('dist-dbs', `songs-${folderName}.db`);
+
+        const SQL = await initSqlJs();
+        const customLayer = {
+            id: folderName,
+            output: outputPath,
+            sources: [
+                {
+                    type: 'markdown_dir',
+                    path: resolvedInput,
+                    playlist: folderName,
+                    defaultBand: folderName,
+                },
+            ],
+        };
+
+        const db = buildLayerDatabase(SQL, customLayer, { noCache, gitCommit });
+        if (db) {
+            db.close();
+        }
+        return;
+    }
 
     const configPath = path.join(ROOT_DIR, 'shr-config.yaml');
     if (!fs.existsSync(configPath)) {
