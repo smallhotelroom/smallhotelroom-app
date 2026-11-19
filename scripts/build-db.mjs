@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * @file scripts/build-db.mjs
- * @version 5.3.0
+ * @version 5.4.0
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,7 +23,7 @@ import {
 import { parseShrConfigYaml } from '../src/shared/shrConfig.js';
 import { hasCrawlerSongAndChords } from '../src/shared/crawlerTransposer.js';
 
-export const __version__ = '5.3.0';
+export const __version__ = '5.4.0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -894,6 +894,7 @@ async function main() {
     loadDotEnv();
     const args = process.argv.slice(2);
     const noCache = args.includes('--no-cache') || args.includes('--clean-cache');
+    const shouldMerge = args.includes('--merge');
     const gitCommit = getGitShortCommit();
 
     const inputArg = getCliArgValue(args, '--input');
@@ -947,7 +948,7 @@ async function main() {
         }
     }
 
-    if (builtDbs.length > 1 && config.merged_output) {
+    if (shouldMerge && builtDbs.length > 1 && config.merged_output) {
         console.log(`\n========================================`);
         console.log(`Merging ${builtDbs.length} active layers in priority order...`);
         console.log(`========================================`);
