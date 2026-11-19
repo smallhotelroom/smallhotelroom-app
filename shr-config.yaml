@@ -1,5 +1,5 @@
 # File: shr-config.yaml
-# Version: 2.1.0
+# Version: 2.1.1
 # Single Source of Truth for Small Hotel Room App Defaults, PDF Generation, and Database Layers.
 
 app:
@@ -74,6 +74,10 @@ layers:
         match: "Cancionesdejuan - *"
       - name: "Metal, Rock y Punk"
         from_file: "${SHR_CURATED_DIR}/additionalPlaylists/metal-rock-punk.txt"
+      - name: "Metal, Rock y Punk"
+        match: "Small Hotel Room - *"
+      - name: "Metal, Rock y Punk"
+        match: "Cancionesdejuan - *"
 
   - id: "crawler"
     output: "dist-dbs/songs-crawler.db"
