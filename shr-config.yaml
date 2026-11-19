@@ -1,5 +1,5 @@
 # File: shr-config.yaml
-# Version: 2.0.0
+# Version: 2.1.0
 # Single Source of Truth for Small Hotel Room App Defaults, PDF Generation, and Database Layers.
 
 app:
@@ -48,10 +48,9 @@ layers:
     also_copy_to: "public/songs.db"
     sources:
       - path: "${SHR_OFFICIAL_DIR:-../smallhotelroom.github.io/src/contents/songs}"
-        playlist: "★ Small Hotel Room"
-    playlists:
-      - name: "★ cancionesdejuan"
-        match: "cancionesdejuan - *"
+        playlist: "Small Hotel Room"
+      - path: "${SHR_CURATED_DIR}/0-GUITAR/cancionesdejuan"
+        playlist: "cancionesdejuan"
 
   - id: "curated"
     output: "dist-dbs/songs-curated.db"
@@ -69,7 +68,11 @@ layers:
       - path: "${SHR_CURATED_DIR}/0-GUITAR/portugues"
         playlist: "Português"
     playlists:
-      - name: "★ Metal, Rock y Punk"
+      - name: "English"
+        match: "Small Hotel Room - *"
+      - name: "Español"
+        match: "Cancionesdejuan - *"
+      - name: "Metal, Rock y Punk"
         from_file: "${SHR_CURATED_DIR}/additionalPlaylists/metal-rock-punk.txt"
 
   - id: "crawler"
