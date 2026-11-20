@@ -1,6 +1,6 @@
 # smallhotelroom-app
 
-Offline chord and lyric reader, 6-string strum/arpeggio sequencer, polyrhythm metronome, and reference ear tuner built with Vite, React, SQLite (`sql.js` WASM), Capacitor, and Tauri.
+Offline chord and lyric reader, string strum/arpeggio sequencer, polyrhythm metronome, and reference ear tuner built with Vite, React, SQLite (`sql.js` WASM), Capacitor, and Tauri.
 
 Depends on `smallhotelroom.github.io` (git clone it next to this repository).
 
