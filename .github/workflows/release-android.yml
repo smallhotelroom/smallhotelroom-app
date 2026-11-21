@@ -1,5 +1,5 @@
 # File: .github/workflows/release-android.yml
-# Version: 1.2.0
+# Version: 1.3.0
 # Builds an installable Android APK on version tags (v*.*.*) or manual dispatch
 # using ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest.
 
@@ -90,12 +90,14 @@ jobs:
       - name: Stage APK Artifact
         run: |
           mkdir -p artifacts
-          TAG_LABEL="${GITHUB_REF_NAME:-dev}"
+          RAW_TAG="${GITHUB_REF_NAME:-dev}"
+          VERSION="${RAW_TAG#v}"
+
           if [ -f "app/android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp -v "app/android/app/build/outputs/apk/debug/app-debug.apk" "artifacts/SmallHotelRoom-${TAG_LABEL}-android-debug.apk"
+            cp -v "app/android/app/build/outputs/apk/debug/app-debug.apk" "artifacts/Small.Hotel.Room_${VERSION}_universal-debug.apk"
           fi
           if [ -f "app/android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            cp -v "app/android/app/build/outputs/apk/release/app-release-unsigned.apk" "artifacts/SmallHotelRoom-${TAG_LABEL}-android-release-unsigned.apk"
+            cp -v "app/android/app/build/outputs/apk/release/app-release-unsigned.apk" "artifacts/Small.Hotel.Room_${VERSION}_universal-unsigned.apk"
           fi
           ls -lh artifacts/
         shell: bash
@@ -113,5 +115,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: artifacts/*
+          files: artifacts/*.apk
           draft: true
