@@ -1,5 +1,5 @@
 # File: docker-compose.yml
-# Version: 1.9.0
+# Version: 1.10.0
 services:
   android-builder:
     image: ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest
@@ -8,6 +8,7 @@ services:
     volumes:
       - .:/app
       - ../smallhotelroom.github.io:/smallhotelroom.github.io:ro
+      - ../../cancionesdejuan/cancionesdejuan.github.io:/cancionesdejuan.github.io:ro
       - gradle-cache:/root/.gradle
       - npm-cache:/root/.npm
       - /etc/localtime:/etc/localtime:ro
@@ -17,6 +18,8 @@ services:
       - /dev/bus/usb:/dev/bus/usb
     environment:
       - GRADLE_TASK=${GRADLE_TASK:-assembleDebug}
+      - SHR_OFFICIAL_DIR=/smallhotelroom.github.io/src/contents/songs
+      - SHR_CANCIONESDEJUAN_DIR=/cancionesdejuan.github.io/src/contents/songs
     command: >
       bash -c "
         if [ -z \"$$(ls -A /root/.gradle/wrapper/dists 2>/dev/null)\" ] && [ -f /opt/gradle-dist/gradle-8.11.1-all.zip ]; then

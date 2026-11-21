@@ -1,5 +1,5 @@
 # File: .github/workflows/release-android.yml
-# Version: 1.3.0
+# Version: 1.4.0
 # Builds an installable Android APK on version tags (v*.*.*) or manual dispatch
 # using ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest.
 
@@ -40,6 +40,12 @@ jobs:
           repository: smallhotelroom/smallhotelroom.github.io
           path: smallhotelroom.github.io
 
+      - name: Checkout cancionesdejuan.github.io alongside ./app
+        uses: actions/checkout@v4
+        with:
+          repository: cancionesdejuan/cancionesdejuan.github.io
+          path: cancionesdejuan/cancionesdejuan.github.io
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -68,8 +74,11 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}/app:/app" \
             -v "${{ github.workspace }}/smallhotelroom.github.io:/smallhotelroom.github.io:ro" \
+            -v "${{ github.workspace }}/cancionesdejuan/cancionesdejuan.github.io:/cancionesdejuan.github.io:ro" \
             -v "${HOME}/.gradle:/root/.gradle" \
             -v "${HOME}/.npm:/root/.npm" \
+            -e SHR_OFFICIAL_DIR=/smallhotelroom.github.io/src/contents/songs \
+            -e SHR_CANCIONESDEJUAN_DIR=/cancionesdejuan.github.io/src/contents/songs \
             -w /app \
             ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest \
             bash -lc "
