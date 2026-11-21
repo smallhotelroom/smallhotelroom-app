@@ -1,5 +1,5 @@
 # File: .github/workflows/release-android.yml
-# Version: 1.4.0
+# Version: 1.5.0
 # Builds an installable Android APK on version tags (v*.*.*) or manual dispatch
 # using ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest.
 
@@ -19,6 +19,10 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_run:
+    workflows: ['Build & Release Desktop Apps']
+    types:
+      - completed
 
 permissions:
   contents: write
@@ -26,6 +30,7 @@ permissions:
 
 jobs:
   build-android:
+    if: github.event_name != 'workflow_run'
     runs-on: ubuntu-24.04
 
     steps:
@@ -118,11 +123,24 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
 
-      - name: Attach to GitHub Release on Tag
-        if: startsWith(github.ref, 'refs/tags/v')
+  attach-apk-to-release:
+    if: github.event_name == 'workflow_run' && startsWith(github.event.workflow_run.head_branch, 'v') && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download Android APK Artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-build-*
+          merge-multiple: true
+          path: artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Attach APK to GitHub Release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tag_name: ${{ github.event.workflow_run.head_branch }}
           files: artifacts/*.apk
           draft: true
