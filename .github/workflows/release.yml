@@ -1,15 +1,16 @@
-# File: .github/workflows/release-android.yml
-# Version: 1.5.0
-# Builds an installable Android APK on version tags (v*.*.*) or manual dispatch
-# using ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest.
+# File: .github/workflows/release.yml
+# Version: 1.0.0
+# Unified release pipeline: builds Desktop (Windows, macOS Universal, Linux) and Android APK
+# in parallel on version tags (v*.*.*) or manual dispatch, then attaches the APK to the
+# single draft GitHub Release created by Tauri to avoid duplicate drafts or race conditions.
 
-name: Build & Release Android APK
+name: Build & Release App (Desktop + Android)
 
 on:
   workflow_dispatch:
     inputs:
       gradle_task:
-        description: 'Gradle task to run'
+        description: 'Android Gradle task to run'
         required: true
         default: 'assembleDebug'
         type: choice
@@ -19,18 +20,110 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_run:
-    workflows: ['Build & Release Desktop Apps']
-    types:
-      - completed
 
 permissions:
   contents: write
   packages: read
 
 jobs:
+  build-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+          - platform: 'ubuntu-24.04'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout App Repo into ./app
+        uses: actions/checkout@v4
+        with:
+          path: app
+
+      - name: Checkout smallhotelroom.github.io alongside ./app
+        uses: actions/checkout@v4
+        with:
+          repository: smallhotelroom/smallhotelroom.github.io
+          path: smallhotelroom.github.io
+
+      - name: Checkout cancionesdejuan.github.io alongside ./app
+        uses: actions/checkout@v4
+        with:
+          repository: cancionesdejuan/cancionesdejuan.github.io
+          path: cancionesdejuan/cancionesdejuan.github.io
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Linux System Dependencies (Ubuntu 24.04)
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            librsvg2-bin \
+            patchelf
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './app/src-tauri -> target'
+
+      - name: Sync Tauri Version with package.json & Build Official DB
+        working-directory: ./app
+        env:
+          SHR_OFFICIAL_DIR: ${{ github.workspace }}/smallhotelroom.github.io/src/contents/songs
+          SHR_CANCIONESDEJUAN_DIR: ${{ github.workspace }}/cancionesdejuan/cancionesdejuan.github.io/src/contents/songs
+        run: |
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const tauriPath = "src-tauri/tauri.conf.json";
+            if (fs.existsSync(tauriPath)) {
+              const tauriConf = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
+              tauriConf.version = pkg.version;
+              fs.writeFileSync(tauriPath, JSON.stringify(tauriConf, null, 2) + "\n");
+            }
+            const cargoPath = "src-tauri/Cargo.toml";
+            if (fs.existsSync(cargoPath)) {
+              const cargo = fs.readFileSync(cargoPath, "utf8");
+              fs.writeFileSync(cargoPath, cargo.replace(/^version\s*=\s*"[^"]*"/m, `version = "${pkg.version}"`));
+            }
+          '
+          npm ci
+          npm run db:build
+
+      - name: Build Tauri Desktop Bundles (.exe, .dmg, .deb, .AppImage)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ./app
+          tagName: v__VERSION__
+          releaseName: 'Small Hotel Room v__VERSION__'
+          releaseBody: 'Installers for Windows (.exe), macOS (.dmg), Linux (.deb / .AppImage), and Android (.apk).'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
   build-android:
-    if: github.event_name != 'workflow_run'
     runs-on: ubuntu-24.04
 
     steps:
@@ -123,24 +216,23 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
 
-  attach-apk-to-release:
-    if: github.event_name == 'workflow_run' && startsWith(github.event.workflow_run.head_branch, 'v') && github.event.workflow_run.conclusion == 'success'
+  attach-android-to-release:
+    needs: [build-tauri, build-android]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
+
     steps:
       - name: Download Android APK Artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: android-build-*
-          merge-multiple: true
+          name: android-build-${{ github.ref_name }}
           path: artifacts
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Attach APK to GitHub Release
+      - name: Attach APK to Draft GitHub Release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.event.workflow_run.head_branch }}
+          tag_name: ${{ github.ref_name }}
           files: artifacts/*.apk
           draft: true
