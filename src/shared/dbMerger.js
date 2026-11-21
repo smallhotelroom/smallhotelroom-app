@@ -1,12 +1,20 @@
 /**
  * @file src/shared/dbMerger.js
- * @version 1.9.0
+ * @version 1.10.0
  */
 import { hasCrawlerSongAndChords } from './crawlerTransposer.js';
 
-export const __version__ = '1.9.0';
+export const __version__ = '1.10.0';
 
 export const DB_SCHEMA_VERSION = '3';
+
+const PRIORITY_PLAYLIST_ORDER = ['small hotel room', 'cancionesdejuan'];
+
+function getPlaylistPriorityIndex(nameOrNorm) {
+    const norm = normalizeSearchText(nameOrNorm);
+    const idx = PRIORITY_PLAYLIST_ORDER.indexOf(norm);
+    return idx === -1 ? PRIORITY_PLAYLIST_ORDER.length : idx;
+}
 
 /**
  * Strips diacritics/accents (e.g. "Leãozinho" -> "leaozinho", "Español" -> "espanol"),
@@ -193,8 +201,9 @@ export function wildcardToRegExp(pattern) {
 
 /**
  * Re-indexes `playlists` and `playlists_songs` so that their default "Original"
- * (autoincrement ID) order is strictly alphabetical (playlists by name, and songs
- * within each playlist by band name then song name).
+ * (autoincrement ID) order puts priority official playlists first ("Small Hotel Room",
+ * then "cancionesdejuan") followed by all remaining playlists alphabetically, and
+ * sorts songs within each playlist alphabetically by band name then song name.
  */
 export function sortPlaylistsAndSongsAlphabetically(db) {
     const playlists = queryObjects(db, 'SELECT id, name, search_norm FROM playlists;');
@@ -203,6 +212,10 @@ export function sortPlaylistsAndSongsAlphabetically(db) {
     }
 
     playlists.sort((a, b) => {
+        const pa = getPlaylistPriorityIndex(a.search_norm || a.name);
+        const pb = getPlaylistPriorityIndex(b.search_norm || b.name);
+        if (pa !== pb) return pa - pb;
+
         const na = normalizeSearchText(a.search_norm || a.name);
         const nb = normalizeSearchText(b.search_norm || b.name);
         if (na !== nb) return na.localeCompare(nb);
