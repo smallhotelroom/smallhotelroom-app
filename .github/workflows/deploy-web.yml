@@ -1,0 +1,80 @@
+# File: .github/workflows/deploy-web.yml
+# Version: 1.0.0
+# Builds the official song database and Vite web bundle, then deploys to GitHub Pages
+# (https://app.smallhotelroom.com) on pushes to main or manual dispatch.
+
+name: Deploy Web App to GitHub Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout App Repo into ./app
+        uses: actions/checkout@v4
+        with:
+          path: app
+
+      - name: Checkout smallhotelroom.github.io alongside ./app
+        uses: actions/checkout@v4
+        with:
+          repository: smallhotelroom/smallhotelroom.github.io
+          path: smallhotelroom.github.io
+
+      - name: Checkout cancionesdejuan.github.io alongside ./app
+        uses: actions/checkout@v4
+        with:
+          repository: cancionesdejuan/cancionesdejuan.github.io
+          path: cancionesdejuan/cancionesdejuan.github.io
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Dependencies, Build Official DB & Web Bundle
+        working-directory: ./app
+        env:
+          SHR_OFFICIAL_DIR: ${{ github.workspace }}/smallhotelroom.github.io/src/contents/songs
+          SHR_CANCIONESDEJUAN_DIR: ${{ github.workspace }}/cancionesdejuan/cancionesdejuan.github.io/src/contents/songs
+        run: |
+          npm ci
+          npm run db:build
+          npm run build
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
