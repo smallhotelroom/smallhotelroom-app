@@ -1,0 +1,114 @@
+# File: .github/workflows/release-android.yml
+# Version: 1.1.0
+# Builds an installable Android APK on version tags (v*.*.*) or manual dispatch
+# using ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest.
+
+name: Build & Release Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      gradle_task:
+        description: 'Gradle task to run'
+        required: true
+        default: 'assembleDebug'
+        type: choice
+        options:
+          - assembleDebug
+          - assembleRelease
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout App Repo into ./app
+        uses: actions/checkout@v4
+        with:
+          path: app
+
+      - name: Checkout smallhotelroom.github.io alongside ./app
+        uses: actions/checkout@v4
+        with:
+          repository: smallhotelroom/smallhotelroom.github.io
+          path: smallhotelroom.github.io
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Android Builder Image
+        run: docker pull ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest
+
+      - name: Cache npm and Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.gradle
+          key: android-build-${{ runner.os }}-${{ hashFiles('app/package-lock.json', 'app/android/gradle.properties', 'app/android/build.gradle', 'app/android/app/build.gradle') }}
+          restore-keys: |
+            android-build-${{ runner.os }}-
+
+      - name: Build Android APK in Builder Container
+        env:
+          GRADLE_TASK: ${{ inputs.gradle_task || 'assembleDebug' }}
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/app:/app" \
+            -v "${{ github.workspace }}/smallhotelroom.github.io:/smallhotelroom.github.io:ro" \
+            -v "${HOME}/.gradle:/root/.gradle" \
+            -v "${HOME}/.npm:/root/.npm" \
+            -w /app \
+            ghcr.io/smallhotelroom/smallhotelroom-android-builder:latest \
+            bash -lc "
+              set -e
+              if [ -z \"\$(ls -A /root/.gradle/wrapper/dists 2>/dev/null)\" ] && [ -f /opt/gradle-dist/gradle-8.11.1-all.zip ]; then
+                mkdir -p /root/.gradle/wrapper/dists/gradle-8.11.1-all/2qik7nd48slq1ooc2496pTF4i
+                cp /opt/gradle-dist/gradle-8.11.1-all.zip /root/.gradle/wrapper/dists/gradle-8.11.1-all/2qik7nd48slq1ooc2496pTF4i/
+              fi
+              npm ci
+              npm run db:build
+              npm run build
+              npx cap sync android
+              cd android
+              (./gradlew ${GRADLE_TASK} --build-cache --offline || ./gradlew ${GRADLE_TASK} --build-cache)
+            "
+
+      - name: Stage APK Artifact
+        run: |
+          mkdir -p artifacts
+          TAG_LABEL="${GITHUB_REF_NAME:-dev}"
+          if [ -f "app/android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            cp -v "app/android/app/build/outputs/apk/debug/app-debug.apk" "artifacts/SmallHotelRoom-${TAG_LABEL}-android-debug.apk"
+          fi
+          if [ -f "app/android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            cp -v "app/android/app/build/outputs/apk/release/app-release-unsigned.apk" "artifacts/SmallHotelRoom-${TAG_LABEL}-android-release-unsigned.apk"
+          fi
+          ls -lh artifacts/
+        shell: bash
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-${{ github.ref_name }}
+          path: artifacts/*
+
+      - name: Attach to GitHub Release on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: artifacts/*
+          draft: true
