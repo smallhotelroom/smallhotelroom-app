@@ -1,6 +1,6 @@
 /**
  * @file src/shared/AppContext.jsx
- * @version 3.7.0
+ * @version 3.7.1
  */
 import React, { createContext, useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -9,7 +9,7 @@ import { parseShrConfigYaml } from './shrConfig';
 import rawConfigYaml from '../../shr-config.yaml?raw';
 import { COLOR_THEMES } from './songSchema.js';
 
-export const __version__ = '3.7.0';
+export const __version__ = '3.7.1';
 
 export const SHR_CONFIG = parseShrConfigYaml(rawConfigYaml);
 export const APP_DEFAULTS = SHR_CONFIG.app;
@@ -74,24 +74,6 @@ export function AppProvider({ children }) {
         return 'list';
     });
 
-    const setListViewMode = (nextMode) => {
-        const valid = nextMode === 'grid' ? 'grid' : 'list';
-        setListViewModeState(valid);
-        if (typeof localStorage !== 'undefined') {
-            localStorage.setItem(LIST_VIEW_MODE_STORAGE_KEY, valid);
-        }
-    };
-
-    const toggleListViewMode = () => {
-        setListViewModeState((prev) => {
-            const next = prev === 'grid' ? 'list' : 'grid';
-            if (typeof localStorage !== 'undefined') {
-                localStorage.setItem(LIST_VIEW_MODE_STORAGE_KEY, next);
-            }
-            return next;
-        });
-    };
-
     // Persistent Pinch-Zoom Scales (per List / Grid mode)
     const [listScale, setListScaleState] = useState(() => {
         if (typeof localStorage !== 'undefined') {
@@ -127,6 +109,26 @@ export function AppProvider({ children }) {
         if (typeof localStorage !== 'undefined') {
             localStorage.setItem(GRID_SCALE_STORAGE_KEY, String(clamped));
         }
+    };
+
+    const setListViewMode = (nextMode) => {
+        const valid = nextMode === 'grid' ? 'grid' : 'list';
+        setListViewModeState(valid);
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(LIST_VIEW_MODE_STORAGE_KEY, valid);
+        }
+    };
+
+    const toggleListViewMode = () => {
+        setListViewModeState((prev) => {
+            const next = prev === 'grid' ? 'list' : 'grid';
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(LIST_VIEW_MODE_STORAGE_KEY, next);
+            }
+            return next;
+        });
+        setListScale(1);
+        setGridScale(1);
     };
 
     // 1) Compensate Capo / Drop (Default: false)
