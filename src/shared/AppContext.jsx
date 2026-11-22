@@ -1,6 +1,6 @@
 /**
  * @file src/shared/AppContext.jsx
- * @version 3.7.1
+ * @version 3.7.2
  */
 import React, { createContext, useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -9,7 +9,7 @@ import { parseShrConfigYaml } from './shrConfig';
 import rawConfigYaml from '../../shr-config.yaml?raw';
 import { COLOR_THEMES } from './songSchema.js';
 
-export const __version__ = '3.7.1';
+export const __version__ = '3.7.2';
 
 export const SHR_CONFIG = parseShrConfigYaml(rawConfigYaml);
 export const APP_DEFAULTS = SHR_CONFIG.app;
@@ -63,7 +63,7 @@ export function AppProvider({ children }) {
         }
     };
 
-    // Global List / Grid View Mode ('list' | 'grid')
+    // Global List / Grid View Mode ('grid' | 'list', default: 'grid')
     const [listViewMode, setListViewModeState] = useState(() => {
         if (typeof localStorage !== 'undefined') {
             const saved = localStorage.getItem(LIST_VIEW_MODE_STORAGE_KEY);
@@ -71,7 +71,7 @@ export function AppProvider({ children }) {
                 return saved;
             }
         }
-        return 'list';
+        return 'grid';
     });
 
     // Persistent Pinch-Zoom Scales (per List / Grid mode)
