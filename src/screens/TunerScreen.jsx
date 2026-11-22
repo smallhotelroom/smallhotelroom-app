@@ -1,22 +1,75 @@
 /**
  * @file src/screens/TunerScreen.jsx
- * @version 1.0.4
- * 10-Button Reference Ear Tuner (6 Guitar strings + 4 Ukulele strings)
- * with Natural/Synth tone selector, optional hands-free Repeat Loop,
+ * @version 1.1.0
+ * Single-instrument Reference Ear Tuner with horizontal instrument switcher
+ * (Guitar, Ukulele, Bass, Violin/Mandolin, Sax/Winds, Chromatic with octave & span controls),
+ * Natural/Synth tone selector, optional hands-free Repeat Loop,
  * and theme-aware accent styling (Small Hotel Room / Basic).
  */
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Moon, Repeat, Square, Sun, Volume2 } from 'lucide-react';
 import { AppContext } from '../shared/AppContext';
 import {
+    BASS_STRINGS,
     GUITAR_STRINGS,
+    SAX_WINDS_NOTES,
     UKULELE_STRINGS,
+    VIOLIN_STRINGS,
+    buildChromaticNotes,
     playNoteFrequency,
 } from '../shared/audioEngine';
 
-export const __version__ = '1.0.4';
+export const __version__ = '1.1.0';
 
 const TUNER_SOUND_MODE_KEY = 'shr_tuner_sound_mode';
+const TUNER_INSTRUMENT_KEY = 'shr_tuner_instrument';
+const TUNER_OCTAVE_KEY = 'shr_tuner_chromatic_octave';
+const TUNER_OCTAVE_SPAN_KEY = 'shr_tuner_chromatic_span';
+
+const INSTRUMENT_TABS = [
+    {
+        id: 'guitar',
+        label: 'Guitar',
+        title: 'Guitar (6 Strings)',
+        subtitle: 'Standard E A D G B E',
+        columns: 3,
+    },
+    {
+        id: 'ukulele',
+        label: 'Ukulele',
+        title: 'Ukulele (4 Strings)',
+        subtitle: 'Standard G C E A',
+        columns: 2,
+    },
+    {
+        id: 'bass',
+        label: 'Bass',
+        title: 'Bass (4 Strings)',
+        subtitle: 'Standard E A D G',
+        columns: 2,
+    },
+    {
+        id: 'violin',
+        label: 'Violin',
+        title: 'Violin / Mandolin',
+        subtitle: 'Standard G D A E',
+        columns: 2,
+    },
+    {
+        id: 'winds',
+        label: 'Sax / Winds',
+        title: 'Saxophone & Winds',
+        subtitle: 'Concert Pitch Reference',
+        columns: 2,
+    },
+    {
+        id: 'chromatic',
+        label: 'Chromatic',
+        title: 'Chromatic Reference',
+        subtitle: 'A4 = 440.0 Hz',
+        columns: 3,
+    },
+];
 
 export default function TunerScreen({ onBack }) {
     const { darkMode, setDarkMode } = useContext(AppContext);
@@ -24,16 +77,33 @@ export default function TunerScreen({ onBack }) {
     const [soundMode, setSoundMode] = useState(() => {
         return localStorage.getItem(TUNER_SOUND_MODE_KEY) || 'natural';
     });
+    const [instrumentId, setInstrumentId] = useState(() => {
+        const saved = localStorage.getItem(TUNER_INSTRUMENT_KEY);
+        return INSTRUMENT_TABS.some((t) => t.id === saved) ? saved : 'guitar';
+    });
+    const [chromaticOctave, setChromaticOctave] = useState(() => {
+        const saved = parseInt(localStorage.getItem(TUNER_OCTAVE_KEY), 10);
+        return !Number.isNaN(saved) && saved >= 2 && saved <= 6 ? saved : 4;
+    });
+    const [chromaticSpan, setChromaticSpan] = useState(() => {
+        const saved = parseInt(localStorage.getItem(TUNER_OCTAVE_SPAN_KEY), 10);
+        return saved === 2 ? 2 : 1;
+    });
     const [loopEnabled, setLoopEnabled] = useState(false);
     const [activeStringId, setActiveStringId] = useState(null);
 
     const stopVoiceRef = useRef(null);
     const loopIntervalRef = useRef(null);
+    const highlightTimeoutRef = useRef(null);
 
     const stopCurrentSound = () => {
         if (loopIntervalRef.current) {
             clearInterval(loopIntervalRef.current);
             loopIntervalRef.current = null;
+        }
+        if (highlightTimeoutRef.current) {
+            clearTimeout(highlightTimeoutRef.current);
+            highlightTimeoutRef.current = null;
         }
         if (stopVoiceRef.current) {
             stopVoiceRef.current();
@@ -51,8 +121,56 @@ export default function TunerScreen({ onBack }) {
         localStorage.setItem(TUNER_SOUND_MODE_KEY, nextMode);
     };
 
+    const handleInstrumentSelect = (nextId) => {
+        if (nextId === instrumentId) return;
+        stopCurrentSound();
+        setInstrumentId(nextId);
+        localStorage.setItem(TUNER_INSTRUMENT_KEY, nextId);
+    };
+
+    const handleOctaveChange = (delta) => {
+        const maxOct = chromaticSpan === 2 ? 5 : 6;
+        const nextOct = Math.max(2, Math.min(maxOct, chromaticOctave + delta));
+        if (nextOct === chromaticOctave) return;
+        stopCurrentSound();
+        setChromaticOctave(nextOct);
+        localStorage.setItem(TUNER_OCTAVE_KEY, String(nextOct));
+    };
+
+    const handleSpanSelect = (nextSpan) => {
+        if (nextSpan === chromaticSpan) return;
+        stopCurrentSound();
+        setChromaticSpan(nextSpan);
+        localStorage.setItem(TUNER_OCTAVE_SPAN_KEY, String(nextSpan));
+        if (nextSpan === 2 && chromaticOctave > 5) {
+            setChromaticOctave(5);
+            localStorage.setItem(TUNER_OCTAVE_KEY, '5');
+        }
+    };
+
+    const activeInstrument =
+        INSTRUMENT_TABS.find((t) => t.id === instrumentId) || INSTRUMENT_TABS[0];
+
+    const currentNotes = useMemo(() => {
+        switch (instrumentId) {
+            case 'ukulele':
+                return UKULELE_STRINGS;
+            case 'bass':
+                return BASS_STRINGS;
+            case 'violin':
+                return VIOLIN_STRINGS;
+            case 'winds':
+                return SAX_WINDS_NOTES;
+            case 'chromatic':
+                return buildChromaticNotes(chromaticOctave, chromaticSpan);
+            case 'guitar':
+            default:
+                return GUITAR_STRINGS;
+        }
+    }, [instrumentId, chromaticOctave, chromaticSpan]);
+
     const triggerString = (strObj, forceLoop = loopEnabled) => {
-        // If looping and tapping the already-active string, toggle it off
+        // If looping and tapping the already-active note, toggle it off
         if (forceLoop && activeStringId === strObj.id) {
             stopCurrentSound();
             return;
@@ -77,7 +195,7 @@ export default function TunerScreen({ onBack }) {
             loopIntervalRef.current = setInterval(playOnce, 2500);
         } else {
             const currentId = strObj.id;
-            setTimeout(() => {
+            highlightTimeoutRef.current = setTimeout(() => {
                 setActiveStringId((prev) => (prev === currentId ? null : prev));
             }, 1800);
         }
@@ -95,6 +213,7 @@ export default function TunerScreen({ onBack }) {
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    minHeight: 74,
                     padding: '14px 10px',
                     borderRadius: 10,
                     border: isActive
@@ -112,7 +231,7 @@ export default function TunerScreen({ onBack }) {
                 }}>
                 <div
                     style={{
-                        fontSize: '1.35rem',
+                        fontSize: instrumentId === 'winds' ? '1.1rem' : '1.35rem',
                         fontWeight: 800,
                         color: isActive
                             ? 'var(--accent-color)'
@@ -120,18 +239,38 @@ export default function TunerScreen({ onBack }) {
                     }}>
                     {strObj.label}
                 </div>
+                {strObj.sublabel && (
+                    <div
+                        style={{
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            color: 'var(--text-primary)',
+                            opacity: 0.85,
+                            marginTop: 2,
+                        }}>
+                        {strObj.sublabel}
+                    </div>
+                )}
                 <div
                     style={{
-                        fontSize: '0.82rem',
+                        fontSize: '0.8rem',
                         fontWeight: 600,
                         color: 'var(--text-secondary)',
                         marginTop: 2,
                     }}>
-                    {strObj.note} · {strObj.freq.toFixed(1)} Hz
+                    {instrumentId === 'chromatic'
+                        ? `${strObj.freq.toFixed(1)} Hz`
+                        : `${strObj.note} · ${strObj.freq.toFixed(1)} Hz`}
                 </div>
             </button>
         );
     };
+
+    const maxOctave = chromaticSpan === 2 ? 5 : 6;
+    const octaveRangeLabel =
+        chromaticSpan === 2
+            ? `C${chromaticOctave} – B${chromaticOctave + 1}`
+            : `C${chromaticOctave} – B${chromaticOctave}`;
 
     return (
         <>
@@ -173,7 +312,7 @@ export default function TunerScreen({ onBack }) {
                         borderRadius: 10,
                         border: '1px solid var(--border-color)',
                         background: 'var(--bg-surface)',
-                        marginBottom: 18,
+                        marginBottom: 14,
                     }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Volume2 size={18} />
@@ -241,56 +380,166 @@ export default function TunerScreen({ onBack }) {
                     </button>
                 </div>
 
-                {/* Guitar 6 Strings Section */}
-                <div style={{ marginBottom: 22 }}>
-                    <div
-                        style={{
-                            fontWeight: 800,
-                            fontSize: '1rem',
-                            marginBottom: 10,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'baseline',
-                        }}>
-                        <span>Guitar (6 Strings)</span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                            Standard E A D G B E
-                        </span>
-                    </div>
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(3, 1fr)',
-                            gap: 10,
-                        }}>
-                        {GUITAR_STRINGS.map(renderStringButton)}
-                    </div>
+                {/* Single-Instrument Switcher Pill Bar */}
+                <div
+                    role="tablist"
+                    aria-label="Tuner Instruments"
+                    style={{
+                        display: 'flex',
+                        gap: 8,
+                        overflowX: 'auto',
+                        paddingBottom: 6,
+                        marginBottom: 14,
+                        WebkitOverflowScrolling: 'touch',
+                    }}>
+                    {INSTRUMENT_TABS.map((inst) => {
+                        const isSelected = inst.id === instrumentId;
+                        return (
+                            <button
+                                key={inst.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={isSelected}
+                                onClick={() => handleInstrumentSelect(inst.id)}
+                                style={{
+                                    flexShrink: 0,
+                                    padding: '8px 14px',
+                                    borderRadius: 999,
+                                    fontWeight: 700,
+                                    fontSize: '0.86rem',
+                                    border: isSelected
+                                        ? '1px solid var(--accent-color)'
+                                        : '1px solid var(--border-color)',
+                                    background: isSelected
+                                        ? 'var(--accent-color)'
+                                        : 'var(--bg-surface)',
+                                    color: isSelected
+                                        ? '#ffffff'
+                                        : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                }}>
+                                {inst.label}
+                            </button>
+                        );
+                    })}
                 </div>
 
-                {/* Ukulele 4 Strings Section */}
-                <div>
+                {/* Active Instrument Header */}
+                <div
+                    style={{
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        marginBottom: 10,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'baseline',
+                        gap: 8,
+                    }}>
+                    <span>{activeInstrument.title}</span>
+                    <span
+                        style={{
+                            fontSize: '0.8rem',
+                            color: 'var(--text-secondary)',
+                            fontWeight: 500,
+                        }}>
+                        {instrumentId === 'chromatic'
+                            ? octaveRangeLabel
+                            : activeInstrument.subtitle}
+                    </span>
+                </div>
+
+                {/* Chromatic Octave & Span Controls */}
+                {instrumentId === 'chromatic' && (
                     <div
                         style={{
-                            fontWeight: 800,
-                            fontSize: '1rem',
-                            marginBottom: 10,
                             display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
                             justifyContent: 'space-between',
-                            alignItems: 'baseline',
-                        }}>
-                        <span>Ukulele (4 Strings)</span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                            Standard G C E A
-                        </span>
-                    </div>
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
                             gap: 10,
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-surface)',
+                            marginBottom: 12,
                         }}>
-                        {UKULELE_STRINGS.map(renderStringButton)}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                                Octave:
+                            </span>
+                            <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={chromaticOctave <= 2}
+                                style={{
+                                    padding: '4px 10px',
+                                    opacity: chromaticOctave <= 2 ? 0.45 : 1,
+                                }}
+                                onClick={() => handleOctaveChange(-1)}>
+                                −
+                            </button>
+                            <span
+                                style={{
+                                    minWidth: 24,
+                                    textAlign: 'center',
+                                    fontWeight: 800,
+                                    fontSize: '0.95rem',
+                                }}>
+                                {chromaticOctave}
+                            </span>
+                            <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={chromaticOctave >= maxOctave}
+                                style={{
+                                    padding: '4px 10px',
+                                    opacity: chromaticOctave >= maxOctave ? 0.45 : 1,
+                                }}
+                                onClick={() => handleOctaveChange(1)}>
+                                +
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'inline-flex', gap: 6 }}>
+                            {[1, 2].map((span) => (
+                                <button
+                                    key={span}
+                                    type="button"
+                                    onClick={() => handleSpanSelect(span)}
+                                    style={{
+                                        padding: '5px 10px',
+                                        borderRadius: 999,
+                                        fontWeight: 700,
+                                        fontSize: '0.8rem',
+                                        border:
+                                            chromaticSpan === span
+                                                ? '1px solid var(--accent-color)'
+                                                : '1px solid var(--border-color)',
+                                        background:
+                                            chromaticSpan === span
+                                                ? 'var(--accent-color)'
+                                                : 'transparent',
+                                        color:
+                                            chromaticSpan === span
+                                                ? '#ffffff'
+                                                : 'var(--text-primary)',
+                                        cursor: 'pointer',
+                                    }}>
+                                    {span} Oct
+                                </button>
+                            ))}
+                        </div>
                     </div>
+                )}
+
+                {/* Active Instrument Reference Grid */}
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(${activeInstrument.columns}, 1fr)`,
+                        gap: 10,
+                    }}>
+                    {currentNotes.map(renderStringButton)}
                 </div>
             </main>
         </>

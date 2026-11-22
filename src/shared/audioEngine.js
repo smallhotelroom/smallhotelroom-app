@@ -1,8 +1,10 @@
 /**
  * @file src/shared/audioEngine.js
- * @version 2.8.1
+ * @version 2.9.0
  * Web Audio API synthesis engine for Small Hotel Room:
- * - Tuner reference string definitions (`GUITAR_STRINGS`, `UKULELE_STRINGS`) & `playNoteFrequency`
+ * - Tuner reference definitions (`GUITAR_STRINGS`, `UKULELE_STRINGS`, `BASS_STRINGS`,
+ *   `VIOLIN_STRINGS`, `SAX_WINDS_NOTES`, `buildChromaticNotes`) & `playNoteFrequency`
+ *   with click-free fade-out `stop()` callback
  * - Polyphonic guitar/ukulele chord strumming (quantized to Track A count 1 when metronome is active)
  * - Multi-track Polyrhythm Metronome scheduler:
  *   - Track A defines the master beat cycle ("A follows BPM": each step on A = 1 beat at master BPM)
@@ -11,7 +13,7 @@
  */
 import { APP_DEFAULTS } from './AppContext';
 
-export const __version__ = '2.8.1';
+export const __version__ = '2.9.0';
 
 let audioCtx = null;
 
@@ -28,7 +30,7 @@ export function getAudioContext() {
     return audioCtx;
 }
 
-// --- TUNER STRING CONSTANTS (with unique `id` fields for active button state) ---
+// --- TUNER INSTRUMENT CONSTANTS (with unique `id` fields for active button state) ---
 export const GUITAR_STRINGS = [
     { id: 'g-6E', string: 6, note: 'E2', label: '6E', freq: 82.41, midi: 40 },
     { id: 'g-5A', string: 5, note: 'A2', label: '5A', freq: 110.0, midi: 45 },
@@ -44,6 +46,94 @@ export const UKULELE_STRINGS = [
     { id: 'u-2E', string: 2, note: 'E4', label: '2E', freq: 329.63, midi: 64 },
     { id: 'u-1A', string: 1, note: 'A4', label: '1A', freq: 440.0, midi: 69 },
 ];
+
+export const BASS_STRINGS = [
+    { id: 'b-4E', string: 4, note: 'E1', label: '4E', freq: 41.2, midi: 28 },
+    { id: 'b-3A', string: 3, note: 'A1', label: '3A', freq: 55.0, midi: 33 },
+    { id: 'b-2D', string: 2, note: 'D2', label: '2D', freq: 73.42, midi: 38 },
+    { id: 'b-1G', string: 1, note: 'G2', label: '1G', freq: 98.0, midi: 43 },
+];
+
+export const VIOLIN_STRINGS = [
+    { id: 'v-4G', string: 4, note: 'G3', label: '4G', freq: 196.0, midi: 55 },
+    { id: 'v-3D', string: 3, note: 'D4', label: '3D', freq: 293.66, midi: 62 },
+    { id: 'v-2A', string: 2, note: 'A4', label: '2A', freq: 440.0, midi: 69 },
+    { id: 'v-1E', string: 1, note: 'E5', label: '1E', freq: 659.25, midi: 76 },
+];
+
+export const SAX_WINDS_NOTES = [
+    {
+        id: 'w-Bb4',
+        note: 'Bb4',
+        label: 'Concert Bb',
+        sublabel: 'Alto G · Tenor C',
+        freq: 466.16,
+        midi: 70,
+    },
+    {
+        id: 'w-A4',
+        note: 'A4',
+        label: 'Concert A',
+        sublabel: 'Alto F# · Tenor B',
+        freq: 440.0,
+        midi: 69,
+    },
+    {
+        id: 'w-C4',
+        note: 'C4',
+        label: 'Concert C',
+        sublabel: 'Alto A · Tenor D',
+        freq: 261.63,
+        midi: 60,
+    },
+    {
+        id: 'w-F4',
+        note: 'F4',
+        label: 'Concert F',
+        sublabel: 'Alto D · Tenor G',
+        freq: 349.23,
+        midi: 65,
+    },
+];
+
+const CHROMATIC_NOTE_NAMES = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+];
+
+export function buildChromaticNotes(startOctave = 4, octaveCount = 1) {
+    const baseOct = Math.max(1, Math.min(6, Math.round(Number(startOctave) || 4)));
+    const count = Math.max(1, Math.min(2, Math.round(Number(octaveCount) || 1)));
+    const notes = [];
+
+    for (let o = 0; o < count; o++) {
+        const oct = baseOct + o;
+        if (oct > 7) break;
+        for (let semi = 0; semi < 12; semi++) {
+            const midi = (oct + 1) * 12 + semi;
+            const freq = 440 * Math.pow(2, (midi - 69) / 12);
+            const name = CHROMATIC_NOTE_NAMES[semi];
+            notes.push({
+                id: `chr-${name}${oct}`,
+                note: `${name}${oct}`,
+                label: `${name}${oct}`,
+                freq,
+                midi,
+            });
+        }
+    }
+    return notes;
+}
 
 export const MAX_METRONOME_TRACKS = 12;
 export const MAX_METRONOME_STEPS = 32;
@@ -577,7 +667,7 @@ export function playReferenceNote(
     { mode = 'natural', duration = 1.6, startTimeOffset = 0, gainScale = 0.28 } = {}
 ) {
     const ctx = getAudioContext();
-    if (!ctx || !freqHz) return;
+    if (!ctx || !freqHz) return () => {};
 
     const now = ctx.currentTime + Math.max(0, startTimeOffset);
     const osc1 = ctx.createOscillator();
@@ -618,6 +708,22 @@ export function playReferenceNote(
     osc2.start(now);
     osc1.stop(now + duration + 0.02);
     osc2.stop(now + duration + 0.02);
+
+    let stopped = false;
+    return () => {
+        if (stopped) return;
+        stopped = true;
+        try {
+            const t = ctx.currentTime;
+            gain.gain.cancelScheduledValues(t);
+            gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), t);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+            osc1.stop(t + 0.03);
+            osc2.stop(t + 0.03);
+        } catch {
+            // Oscillators may already have stopped
+        }
+    };
 }
 
 export function playNoteFrequency(freqHz, options = {}) {
