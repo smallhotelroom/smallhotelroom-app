@@ -1,9 +1,9 @@
 /**
  * @file src/shared/audioEngine.js
- * @version 2.7.2
+ * @version 2.8.0
  * Web Audio API synthesis engine for Small Hotel Room:
  * - Tuner reference string definitions (`GUITAR_STRINGS`, `UKULELE_STRINGS`) & `playNoteFrequency`
- * - Polyphonic guitar/ukulele chord strumming & Reference pitch generator
+ * - Polyphonic guitar/ukulele chord strumming (quantized to the metronome beat grid when active)
  * - Multi-track Polyrhythm Metronome scheduler:
  *   - Track A defines the master beat cycle ("A follows BPM": each step on A = 1 beat at master BPM)
  *   - Supports up to 12 tracks (A..L) and up to 32 steps per track
@@ -11,7 +11,7 @@
  */
 import { APP_DEFAULTS } from './AppContext';
 
-export const __version__ = '2.7.2';
+export const __version__ = '2.8.0';
 
 let audioCtx = null;
 
@@ -265,21 +265,51 @@ function scheduleMetronomeClickAt(ctx, time, voice = 'high', soundMode = 'natura
 
 // --- LOOKAHEAD SCHEDULER (Track A follows BPM; all other tracks subdivide the cycle) ---
 let schedulerTimerId = null;
+let schedulerGeneration = 0;
+let masterCycleAnchorTime = 0;
 let nextTrackStepTimes = [];
 let nextTrackStepIndices = [];
 const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD_SEC = 0.1;
 
 function resetSchedulerCursors(ctx) {
+    schedulerGeneration += 1;
     const now = ctx ? ctx.currentTime + 0.03 : 0;
+    masterCycleAnchorTime = now;
     nextTrackStepTimes = metronomeState.tracks.map(() => now);
     nextTrackStepIndices = metronomeState.tracks.map(() => 0);
+}
+
+/**
+ * Returns the delay in seconds until the next Track A metronome beat.
+ * Returns 0 if the metronome is not playing or if called within 15ms of a beat.
+ */
+export function getNextMetronomeBeatDelaySec(ctx = getAudioContext()) {
+    if (!metronomeState.isPlaying || !ctx) return 0;
+
+    const now = ctx.currentTime;
+    if (now <= masterCycleAnchorTime) {
+        return Math.max(0, masterCycleAnchorTime - now);
+    }
+
+    const beatDurationSec = 60 / Math.max(30, metronomeState.bpm);
+    const elapsed = now - masterCycleAnchorTime;
+    const remainder = elapsed % beatDurationSec;
+
+    // 15ms grace window right after a beat so on-time taps trigger immediately
+    if (remainder < 0.015) {
+        return 0;
+    }
+
+    return beatDurationSec - remainder;
 }
 
 function runSchedulerTick() {
     if (!metronomeState.isPlaying) return;
     const ctx = getAudioContext();
     if (!ctx) return;
+
+    const currentGen = schedulerGeneration;
 
     // Track A follows BPM: each step on Track A is 1 beat at master BPM!
     const masterBeatsInBar = Math.max(
@@ -314,7 +344,7 @@ function runSchedulerTick() {
             const capturedStepIdx = stepIndex;
 
             setTimeout(() => {
-                if (!metronomeState.isPlaying) return;
+                if (!metronomeState.isPlaying || currentGen !== schedulerGeneration) return;
                 if (
                     metronomeState.currentStepByTrack[capturedTrackIdx] !==
                     capturedStepIdx
@@ -351,6 +381,7 @@ export function setMetronomePlaying(shouldPlay) {
         runSchedulerTick();
         schedulerTimerId = setInterval(runSchedulerTick, LOOKAHEAD_MS);
     } else {
+        schedulerGeneration += 1;
         metronomeState.isPlaying = false;
         metronomeState.currentStepByTrack = metronomeState.tracks.map(() => -1);
         metronomeState.currentBeat = -1;
@@ -379,9 +410,23 @@ export function stopMetronome() {
 
 export function setMetronomeBpm(nextBpm) {
     const clamped = Math.max(30, Math.min(260, Math.round(Number(nextBpm) || 120)));
+    const changed = clamped !== metronomeState.bpm;
     metronomeState.bpm = clamped;
     if (typeof localStorage !== 'undefined') {
         localStorage.setItem(BPM_STORAGE_KEY, String(clamped));
+    }
+    if (changed && metronomeState.isPlaying) {
+        const ctx = getAudioContext();
+        if (ctx) {
+            metronomeState.currentStepByTrack = metronomeState.tracks.map(() => 0);
+            metronomeState.currentBeat = 0;
+            metronomeState.currentSubBeat = 0;
+            resetSchedulerCursors(ctx);
+            runSchedulerTick();
+        }
+        notifyListeners();
+        notifyBeatListeners();
+        return;
     }
     notifyListeners();
 }
@@ -562,15 +607,24 @@ export function playNoteFrequency(freqHz, options = {}) {
 
 export function playPolyphonicChord(
     frequencies = [],
-    { mode = 'natural', duration = 2.1, strumSpreadSec = 0.038 } = {}
+    {
+        mode = 'natural',
+        duration = 2.1,
+        strumSpreadSec = 0.038,
+        quantizeToMetronome = true,
+    } = {}
 ) {
     if (!Array.isArray(frequencies) || frequencies.length === 0) return;
+    const ctx = getAudioContext();
+    const quantizeDelay = quantizeToMetronome
+        ? getNextMetronomeBeatDelaySec(ctx)
+        : 0;
     const perNoteGain = Math.min(0.24, 0.75 / Math.sqrt(frequencies.length));
     frequencies.forEach((freq, idx) => {
         playReferenceNote(freq, {
             mode,
             duration,
-            startTimeOffset: idx * strumSpreadSec,
+            startTimeOffset: quantizeDelay + idx * strumSpreadSec,
             gainScale: perNoteGain,
         });
     });
