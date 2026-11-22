@@ -1,12 +1,12 @@
 /**
  * @file src/shared/dbMerger.js
- * @version 1.10.0
+ * @version 1.11.0
  */
 import { hasCrawlerSongAndChords } from './crawlerTransposer.js';
 
-export const __version__ = '1.10.0';
+export const __version__ = '1.11.0';
 
-export const DB_SCHEMA_VERSION = '3';
+export const DB_SCHEMA_VERSION = '4';
 
 const PRIORITY_PLAYLIST_ORDER = ['small hotel room', 'cancionesdejuan'];
 
@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS songs (
     tuning TEXT,
     url TEXT,
     writer TEXT,
+    youtube TEXT,
     contents TEXT,
     FOREIGN KEY (band_id) REFERENCES bands (id)
 );
@@ -341,7 +342,7 @@ export function inspectDatabase(db, fallbackName = 'custom') {
         metaMap.chord_song_count !== undefined ? Number(metaMap.chord_song_count) : null;
     let bandCount = metaMap.band_count !== undefined ? Number(metaMap.band_count) : null;
     let chordBandCount =
-        metaMap.chordBandCount !== undefined ? Number(metaMap.chordBandCount) : null;
+        metaMap.chord_band_count !== undefined ? Number(metaMap.chord_band_count) : null;
 
     if (songCount === null || bandCount === null) {
         try {
@@ -526,8 +527,8 @@ export function mergeDatabasesInPriorityOrder(SQL, sourceDbs, mergedId = 'merged
                 `INSERT INTO songs (
                     content_hash, name, band_id, origin_id, has_chords, search_norm, album, author, bpm, capo,
                     falsetto, highest, init_note, isrc, key, lang, license, musicians,
-                    spotify, time_signature, track, tuning, url, writer, contents
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                    spotify, time_signature, track, tuning, url, writer, youtube, contents
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
                 [
                     s.content_hash ?? null,
                     s.name,
@@ -553,6 +554,7 @@ export function mergeDatabasesInPriorityOrder(SQL, sourceDbs, mergedId = 'merged
                     s.tuning ?? null,
                     s.url ?? null,
                     s.writer ?? null,
+                    s.youtube ?? null,
                     s.contents ?? '',
                 ]
             );

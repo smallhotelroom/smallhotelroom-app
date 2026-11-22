@@ -1,15 +1,33 @@
 /**
  * @file src/components/SongInfoModal.jsx
- * @version 1.1.0
- * Modal displaying song metadata, BPM metronome trigger, deduced key, custom tuning,
- * interactive language translation switcher (e.g. "Lang: English / Español"), and featuring band links.
+ * @version 1.2.1
+ * Modal displaying song metadata, minimalist header with theme-aware Share button,
+ * Spotify / YouTube streaming links (via react-icons/fa), BPM metronome trigger, deduced key,
+ * custom tuning, interactive language translation switcher (e.g. "Lang: English / Español"),
+ * and featuring band links.
  */
-import React from 'react';
+import React, { useState } from 'react';
+import { Check, Share2, X } from 'lucide-react';
+import { FaSpotify, FaYoutube } from 'react-icons/fa';
 import { transposeChordToken } from '../shared/chordTransposer.js';
 import { MetronomeIcon } from '../screens/HomeScreen';
 import { setMetronomeBpm, setMetronomePlaying } from '../shared/audioEngine';
 
-export const __version__ = '1.1.0';
+export const __version__ = '1.2.1';
+
+function resolveSpotifyUrl(raw) {
+    if (!raw) return null;
+    const str = String(raw).trim();
+    if (!str) return null;
+    return str.startsWith('http') ? str : `https://open.spotify.com/track/${str}`;
+}
+
+function resolveYouTubeUrl(raw) {
+    if (!raw) return null;
+    const str = String(raw).trim();
+    if (!str) return null;
+    return str.startsWith('http') ? str : `https://www.youtube.com/watch?v=${str}`;
+}
 
 /**
  * Formats initNote: only Setting 3 (`vocalTransposition`) affects the singing pitch & initNote!
@@ -50,12 +68,51 @@ export default function SongInfoModal({
     onNavigate,
     onClose,
 }) {
+    const [copied, setCopied] = useState(false);
+
     if (!visible || !songData) {
         return null;
     }
 
     const translations = parsedSections?.translations || [];
     const primaryLang = parsedSections?.primaryLang || 'Original';
+    const spotifyUrl = resolveSpotifyUrl(songData.spotify);
+    const youtubeUrl = resolveYouTubeUrl(songData.youtube);
+
+    const handleShare = async () => {
+        const shareTitle = bandName ? `${songData.name} - ${bandName}` : songData.name;
+        const shareUrl =
+            songData.url ||
+            spotifyUrl ||
+            youtubeUrl ||
+            (typeof window !== 'undefined' && window.location.protocol.startsWith('http')
+                ? window.location.href
+                : '');
+
+        if (typeof navigator !== 'undefined' && navigator.share) {
+            try {
+                await navigator.share({
+                    title: shareTitle,
+                    text: shareTitle,
+                    ...(shareUrl ? { url: shareUrl } : {}),
+                });
+                return;
+            } catch {
+                // User cancelled or native share unavailable; fall through to clipboard
+            }
+        }
+
+        const fallbackText = shareUrl || shareTitle;
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(fallbackText);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1800);
+            } catch {
+                // Ignore clipboard permission errors
+            }
+        }
+    };
 
     return (
         <div
@@ -63,13 +120,114 @@ export default function SongInfoModal({
             style={{ zIndex: 30000 }}
             onClick={onClose}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                {/* Minimalist Header: Song Title + Theme-Aware Share & Close */}
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        borderBottom: '1px solid var(--border-color)',
+                        paddingBottom: 12,
+                        marginBottom: 12,
+                    }}>
+                    <div
+                        style={{
+                            fontSize: '1.1rem',
+                            fontWeight: 800,
+                            color: 'var(--text-primary)',
+                            lineHeight: 1.25,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}>
+                        {songData.name}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <button
+                            type="button"
+                            className="icon-btn"
+                            title={copied ? 'Copied!' : 'Share this song'}
+                            aria-label="Share"
+                            onClick={handleShare}
+                            style={{
+                                padding: 4,
+                                color: 'var(--accent-color)',
+                            }}>
+                            {copied ? <Check size={18} /> : <Share2 size={18} />}
+                        </button>
+                        <button
+                            type="button"
+                            className="icon-btn"
+                            title="Close"
+                            aria-label="Close"
+                            onClick={onClose}
+                            style={{ padding: 4 }}>
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Streaming Pill Row (Spotify / YouTube) */}
+                {(spotifyUrl || youtubeUrl) && (
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '8px 12px',
+                            marginBottom: 12,
+                            borderRadius: 8,
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-primary)',
+                            fontSize: '0.88rem',
+                        }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            Streaming:
+                        </span>
+                        {spotifyUrl && (
+                            <a
+                                href={spotifyUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Listen on Spotify"
+                                aria-label="Listen on Spotify"
+                                style={{
+                                    color: '#1DB954',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                }}>
+                                <FaSpotify size={19} />
+                            </a>
+                        )}
+                        {spotifyUrl && youtubeUrl && (
+                            <span style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
+                                /
+                            </span>
+                        )}
+                        {youtubeUrl && (
+                            <a
+                                href={youtubeUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Watch on YouTube"
+                                aria-label="Watch on YouTube"
+                                style={{
+                                    color: '#FF0000',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                }}>
+                                <FaYoutube size={21} />
+                            </a>
+                        )}
+                    </div>
+                )}
+
                 <div
                     style={{
                         borderBottom: '1px solid var(--border-color)',
                         paddingBottom: 15,
                         lineHeight: 1.6,
                     }}>
-                    <div>Song: {songData.name}</div>
                     {bandName && <div>Band: {bandName}</div>}
                     {songData.album && <div>Album: {songData.album}</div>}
                     {songData.track && <div>Track: {songData.track}</div>}
@@ -106,7 +264,7 @@ export default function SongInfoModal({
                                         metroState.isPlaying &&
                                         metroState.bpm === Number(songData.bpm)
                                             ? '#dc2626'
-                                            : '#2563eb',
+                                            : 'var(--accent-color)',
                                     color: '#ffffff',
                                     cursor: 'pointer',
                                 }}>
@@ -207,21 +365,6 @@ export default function SongInfoModal({
                             URL:{' '}
                             <a href={songData.url} target="_blank" rel="noreferrer">
                                 {songData.url}
-                            </a>
-                        </div>
-                    )}
-                    {songData.spotify && (
-                        <div>
-                            Spotify:{' '}
-                            <a
-                                href={
-                                    songData.spotify.startsWith('http')
-                                        ? songData.spotify
-                                        : `https://open.spotify.com/track/${songData.spotify}`
-                                }
-                                target="_blank"
-                                rel="noreferrer">
-                                {songData.spotify}
                             </a>
                         </div>
                     )}

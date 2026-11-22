@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * @file scripts/build-db.mjs
- * @version 5.5.0
+ * @version 5.5.1
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +24,7 @@ import {
 import { parseShrConfigYaml } from '../src/shared/shrConfig.js';
 import { hasCrawlerSongAndChords } from '../src/shared/crawlerTransposer.js';
 
-export const __version__ = '5.5.0';
+export const __version__ = '5.5.1';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -423,6 +423,16 @@ function buildLayerDatabase(
                 } = schemaMod.parseFrontmatterFile(rawText);
                 const content = cleanSongContents(rawContent);
 
+                // Optional frontmatter `artist:` overrides the filename-derived band name
+                // (e.g. "cancionesdejuan", "AC/DC")
+                if (
+                    song.artist !== undefined &&
+                    song.artist !== null &&
+                    String(song.artist).trim() !== ''
+                ) {
+                    bandName = String(song.artist).trim();
+                }
+
                 const schemaErrors = validateSongFrontmatterAndSections(
                     song,
                     keyLines,
@@ -478,6 +488,7 @@ function buildLayerDatabase(
                         : null;
                 const url = song.url ?? null;
                 const writer = song.writer ?? author;
+                const youtube = song.youtube ?? null;
 
                 const rawHashInput = `${bandName.trim()}|${songName.trim()}|${content}`;
                 const contentHash = crypto
@@ -494,8 +505,8 @@ function buildLayerDatabase(
                     `INSERT INTO songs (
                         content_hash, name, band_id, origin_id, has_chords, search_norm, album, author, bpm, capo,
                         falsetto, highest, init_note, isrc, key, lang, license, musicians,
-                        spotify, time_signature, track, tuning, url, writer, contents
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                        spotify, time_signature, track, tuning, url, writer, youtube, contents
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
                     [
                         contentHash,
                         songName,
@@ -521,6 +532,7 @@ function buildLayerDatabase(
                         tuning,
                         url,
                         writer,
+                        youtube,
                         content,
                     ]
                 );
