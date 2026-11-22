@@ -1,6 +1,6 @@
 /**
  * @file src/screens/SongScreen.jsx
- * @version 3.5.0
+ * @version 3.5.1
  */
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Music, Sliders, Square } from 'lucide-react';
@@ -19,6 +19,7 @@ import {
 } from '../shared/songSections';
 import {
     getMetronomeState,
+    getNextMetronomeBarDelaySec,
     setMetronomePlaying,
     subscribeMetronomeState,
 } from '../shared/audioEngine';
@@ -40,7 +41,7 @@ import {
     triggerPatternStepOnChord,
 } from '../shared/songChordPlayer';
 
-export const __version__ = '3.5.0';
+export const __version__ = '3.5.1';
 
 export default function SongScreen({ routeParams, onNavigate, onBack }) {
     const { selectedSongId, originStr } = routeParams;
@@ -279,10 +280,13 @@ export default function SongScreen({ routeParams, onNavigate, onBack }) {
     );
 
     const effectiveSongBpm = useMemo(() => {
+        if (metroState.isPlaying && metroState.bpm >= 30 && metroState.bpm <= 260) {
+            return metroState.bpm;
+        }
         const rawBpm = Number(songData?.bpm || 0);
         if (rawBpm >= 30 && rawBpm <= 260) return rawBpm;
         return metroState.bpm || 120;
-    }, [songData, metroState.bpm]);
+    }, [songData, metroState.isPlaying, metroState.bpm]);
 
     const chordSequence = useMemo(() => {
         if (!songData) return [];
@@ -411,13 +415,29 @@ export default function SongScreen({ routeParams, onNavigate, onBack }) {
             }
         };
 
-        fireCurrentSubStep();
-
         const barDurationMs =
             (60 / Math.max(30, effectiveSongBpm)) * beatsPerBar * 1000;
         const stepIntervalMs = barDurationMs / Math.max(1, stepsPerBar);
-        const timerId = setInterval(fireCurrentSubStep, stepIntervalMs);
-        return () => clearInterval(timerId);
+
+        let timerId = null;
+        let startDelayId = null;
+
+        const beginLoop = () => {
+            fireCurrentSubStep();
+            timerId = setInterval(fireCurrentSubStep, stepIntervalMs);
+        };
+
+        const barDelayMs = Math.round(getNextMetronomeBarDelaySec() * 1000);
+        if (barDelayMs > 0) {
+            startDelayId = setTimeout(beginLoop, barDelayMs);
+        } else {
+            beginLoop();
+        }
+
+        return () => {
+            if (startDelayId) clearTimeout(startDelayId);
+            if (timerId) clearInterval(timerId);
+        };
     }, [chordPlayActive, effectiveSongBpm, beatsPerBar, stepsPerBar]);
 
     const handleToggleChordPlay = () => {
