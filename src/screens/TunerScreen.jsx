@@ -1,13 +1,13 @@
 /**
  * @file src/screens/TunerScreen.jsx
- * @version 1.2.0
+ * @version 1.3.0
  * Single-instrument Reference Ear Tuner with horizontal instrument switcher
- * (Guitar 6/7/8, Ukulele, Bass 4/5/6, Violin/Mandolin, Sax/Winds, Chromatic with octave & span controls),
- * Natural/Synth tone selector, optional hands-free Repeat Loop,
+ * (Guitar 6/7/8, Ukulele, Bass 4/5/6, Violin/Mandolin, Sax/Winds, Chromatic with octave & span controls,
+ * and custom Frequency generator), Natural/Synth tone selector, optional hands-free Repeat Loop,
  * and theme-aware accent styling (Small Hotel Room / Basic).
  */
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Moon, Repeat, Square, Sun, Volume2 } from 'lucide-react';
+import { ArrowLeft, Moon, Play, Repeat, Square, Sun, Volume2 } from 'lucide-react';
 import { AppContext } from '../shared/AppContext';
 import {
     SAX_WINDS_NOTES,
@@ -19,7 +19,7 @@ import {
     playNoteFrequency,
 } from '../shared/audioEngine';
 
-export const __version__ = '1.2.0';
+export const __version__ = '1.3.0';
 
 const TUNER_SOUND_MODE_KEY = 'shr_tuner_sound_mode';
 const TUNER_INSTRUMENT_KEY = 'shr_tuner_instrument';
@@ -27,6 +27,43 @@ const TUNER_GUITAR_STRINGS_KEY = 'shr_tuner_guitar_strings';
 const TUNER_BASS_STRINGS_KEY = 'shr_tuner_bass_strings';
 const TUNER_OCTAVE_KEY = 'shr_tuner_chromatic_octave';
 const TUNER_OCTAVE_SPAN_KEY = 'shr_tuner_chromatic_span';
+const TUNER_CUSTOM_FREQ_KEY = 'shr_tuner_custom_freq';
+
+const MIN_CUSTOM_FREQ = 20;
+const MAX_CUSTOM_FREQ = 2000;
+const LOG_MIN_FREQ = Math.log(MIN_CUSTOM_FREQ);
+const LOG_MAX_FREQ = Math.log(MAX_CUSTOM_FREQ);
+const FREQ_PRESETS = [415, 432, 440, 442, 444];
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+function clampFreq(val) {
+    const num = Number(val);
+    if (Number.isNaN(num)) return 440;
+    return Math.round(Math.max(MIN_CUSTOM_FREQ, Math.min(MAX_CUSTOM_FREQ, num)) * 10) / 10;
+}
+
+function freqToSliderPos(freq) {
+    const clamped = clampFreq(freq);
+    return ((Math.log(clamped) - LOG_MIN_FREQ) / (LOG_MAX_FREQ - LOG_MIN_FREQ)) * 1000;
+}
+
+function sliderPosToFreq(pos) {
+    const ratio = Math.max(0, Math.min(1, Number(pos) / 1000));
+    const raw = Math.exp(LOG_MIN_FREQ + ratio * (LOG_MAX_FREQ - LOG_MIN_FREQ));
+    return Math.round(raw * 10) / 10;
+}
+
+function describeNearestNote(freq) {
+    if (!freq || freq <= 0) return '';
+    const midiFloat = 69 + 12 * Math.log2(freq / 440);
+    const nearestMidi = Math.round(midiFloat);
+    const cents = Math.round((midiFloat - nearestMidi) * 100);
+    const noteName = NOTE_NAMES[((nearestMidi % 12) + 12) % 12];
+    const octave = Math.floor(nearestMidi / 12) - 1;
+    const centsStr = cents > 0 ? `+${cents}¢` : `${cents}¢`;
+    return `${noteName}${octave} (${centsStr})`;
+}
 
 const GUITAR_VARIANT_SUBTITLES = {
     6: 'Standard E A D G B E',
@@ -83,6 +120,13 @@ const INSTRUMENT_TABS = [
         subtitle: 'A4 = 440.0 Hz',
         columns: 3,
     },
+    {
+        id: 'frequency',
+        label: 'Frequency',
+        title: 'Frequency Generator',
+        subtitle: '20.0 – 2000.0 Hz',
+        columns: 1,
+    },
 ];
 
 export default function TunerScreen({ onBack }) {
@@ -110,6 +154,10 @@ export default function TunerScreen({ onBack }) {
     const [chromaticSpan, setChromaticSpan] = useState(() => {
         const saved = parseInt(localStorage.getItem(TUNER_OCTAVE_SPAN_KEY), 10);
         return saved === 2 ? 2 : 1;
+    });
+    const [customFreq, setCustomFreq] = useState(() => {
+        const saved = localStorage.getItem(TUNER_CUSTOM_FREQ_KEY);
+        return saved !== null ? clampFreq(saved) : 440;
     });
     const [loopEnabled, setLoopEnabled] = useState(false);
     const [activeStringId, setActiveStringId] = useState(null);
@@ -184,6 +232,15 @@ export default function TunerScreen({ onBack }) {
         }
     };
 
+    const updateCustomFreq = (nextVal) => {
+        const clamped = clampFreq(nextVal);
+        setCustomFreq(clamped);
+        localStorage.setItem(TUNER_CUSTOM_FREQ_KEY, String(clamped));
+        if (activeStringId === 'custom-freq') {
+            stopCurrentSound();
+        }
+    };
+
     const activeInstrument =
         INSTRUMENT_TABS.find((t) => t.id === instrumentId) || INSTRUMENT_TABS[0];
 
@@ -199,6 +256,8 @@ export default function TunerScreen({ onBack }) {
                 return SAX_WINDS_NOTES;
             case 'chromatic':
                 return buildChromaticNotes(chromaticOctave, chromaticSpan);
+            case 'frequency':
+                return [];
             case 'guitar':
             default:
                 return getGuitarStrings(guitarStringCount);
@@ -334,6 +393,8 @@ export default function TunerScreen({ onBack }) {
         instrumentId === 'bass' && bassStringCount === 6
             ? 3
             : activeInstrument.columns;
+
+    const isCustomFreqPlaying = activeStringId === 'custom-freq';
 
     return (
         <>
@@ -691,15 +752,191 @@ export default function TunerScreen({ onBack }) {
                     </div>
                 )}
 
-                {/* Active Instrument Reference Grid */}
-                <div
-                    style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
-                        gap: 10,
-                    }}>
-                    {currentNotes.map(renderStringButton)}
-                </div>
+                {/* Custom Frequency Generator (Metronome-BPM-style panel) */}
+                {instrumentId === 'frequency' ? (
+                    <div
+                        style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 16,
+                            padding: '20px 16px',
+                            borderRadius: 12,
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-surface)',
+                        }}>
+                        {/* Big Readout */}
+                        <div style={{ textAlign: 'center' }}>
+                            <div
+                                style={{
+                                    fontSize: '2.6rem',
+                                    fontWeight: 800,
+                                    lineHeight: 1.1,
+                                    color: isCustomFreqPlaying
+                                        ? 'var(--accent-color)'
+                                        : 'var(--text-primary)',
+                                    fontVariantNumeric: 'tabular-nums',
+                                }}>
+                                {customFreq.toFixed(1)}{' '}
+                                <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+                                    Hz
+                                </span>
+                            </div>
+                            <div
+                                style={{
+                                    marginTop: 4,
+                                    fontSize: '0.9rem',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)',
+                                }}>
+                                Nearest: {describeNearestNote(customFreq)}
+                            </div>
+                        </div>
+
+                        {/* Stepper Row (-10, -1, +1, +10) */}
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexWrap: 'wrap',
+                                gap: 8,
+                                width: '100%',
+                            }}>
+                            {[-10, -1, 1, 10].map((delta) => (
+                                <button
+                                    key={delta}
+                                    type="button"
+                                    className="btn-primary"
+                                    style={{
+                                        minWidth: 56,
+                                        padding: '8px 12px',
+                                        fontWeight: 700,
+                                    }}
+                                    onClick={() => updateCustomFreq(customFreq + delta)}>
+                                    {delta > 0 ? `+${delta}` : delta}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Logarithmic Range Slider */}
+                        <div style={{ width: '100%', padding: '0 4px' }}>
+                            <input
+                                type="range"
+                                min={0}
+                                max={1000}
+                                step={1}
+                                value={Math.round(freqToSliderPos(customFreq))}
+                                aria-label="Frequency in Hz"
+                                onChange={(e) =>
+                                    updateCustomFreq(sliderPosToFreq(e.target.value))
+                                }
+                                style={{
+                                    width: '100%',
+                                    accentColor: 'var(--accent-color)',
+                                    cursor: 'pointer',
+                                }}
+                            />
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    fontSize: '0.75rem',
+                                    color: 'var(--text-secondary)',
+                                    marginTop: 2,
+                                }}>
+                                <span>{MIN_CUSTOM_FREQ} Hz</span>
+                                <span>440 Hz</span>
+                                <span>{MAX_CUSTOM_FREQ} Hz</span>
+                            </div>
+                        </div>
+
+                        {/* Quick Reference Presets */}
+                        <div
+                            style={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                justifyContent: 'center',
+                                gap: 6,
+                            }}>
+                            {FREQ_PRESETS.map((preset) => {
+                                const isPresetActive = Math.abs(customFreq - preset) < 0.05;
+                                return (
+                                    <button
+                                        key={preset}
+                                        type="button"
+                                        onClick={() => updateCustomFreq(preset)}
+                                        style={{
+                                            padding: '5px 11px',
+                                            borderRadius: 999,
+                                            fontWeight: 700,
+                                            fontSize: '0.8rem',
+                                            border: isPresetActive
+                                                ? '1px solid var(--accent-color)'
+                                                : '1px solid var(--border-color)',
+                                            background: isPresetActive
+                                                ? 'var(--accent-color)'
+                                                : 'transparent',
+                                            color: isPresetActive
+                                                ? '#ffffff'
+                                                : 'var(--text-primary)',
+                                            cursor: 'pointer',
+                                        }}>
+                                        {preset} Hz
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Play / Stop Action Button */}
+                        <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() =>
+                                isCustomFreqPlaying
+                                    ? stopCurrentSound()
+                                    : triggerString({
+                                          id: 'custom-freq',
+                                          freq: customFreq,
+                                      })
+                            }
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 8,
+                                width: '100%',
+                                maxWidth: 240,
+                                padding: '12px 20px',
+                                fontSize: '1rem',
+                                fontWeight: 800,
+                                borderRadius: 10,
+                                background: isCustomFreqPlaying
+                                    ? '#dc2626'
+                                    : 'var(--accent-color)',
+                            }}>
+                            {isCustomFreqPlaying ? (
+                                <>
+                                    <Square size={18} /> Stop
+                                </>
+                            ) : (
+                                <>
+                                    <Play size={18} /> Play {customFreq.toFixed(1)} Hz
+                                </>
+                            )}
+                        </button>
+                    </div>
+                ) : (
+                    /* Active Instrument Reference Grid */
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
+                            gap: 10,
+                        }}>
+                        {currentNotes.map(renderStringButton)}
+                    </div>
+                )}
             </main>
         </>
     );
