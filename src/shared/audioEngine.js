@@ -1,10 +1,10 @@
 /**
  * @file src/shared/audioEngine.js
- * @version 2.9.0
+ * @version 2.10.1
  * Web Audio API synthesis engine for Small Hotel Room:
  * - Tuner reference definitions (`GUITAR_STRINGS`, `UKULELE_STRINGS`, `BASS_STRINGS`,
- *   `VIOLIN_STRINGS`, `SAX_WINDS_NOTES`, `buildChromaticNotes`) & `playNoteFrequency`
- *   with click-free fade-out `stop()` callback
+ *   `VIOLIN_STRINGS`, `SAX_WINDS_NOTES`, `getGuitarStrings`, `getBassStrings`,
+ *   `buildChromaticNotes`) & `playNoteFrequency` with click-free fade-out `stop()` callback
  * - Polyphonic guitar/ukulele chord strumming (quantized to Track A count 1 when metronome is active)
  * - Multi-track Polyrhythm Metronome scheduler:
  *   - Track A defines the master beat cycle ("A follows BPM": each step on A = 1 beat at master BPM)
@@ -13,7 +13,7 @@
  */
 import { APP_DEFAULTS } from './AppContext';
 
-export const __version__ = '2.9.0';
+export const __version__ = '2.10.1';
 
 let audioCtx = null;
 
@@ -40,6 +40,22 @@ export const GUITAR_STRINGS = [
     { id: 'g-1e', string: 1, note: 'E4', label: '1e', freq: 329.63, midi: 64 },
 ];
 
+export const GUITAR_EXTRA_STRINGS = {
+    7: { id: 'g-7B', string: 7, note: 'B1', label: '7B', freq: 61.74, midi: 35 },
+    8: { id: 'g-8F#', string: 8, note: 'F#1', label: '8F#', freq: 46.25, midi: 30 },
+};
+
+export function getGuitarStrings(stringCount = 6) {
+    const count = Number(stringCount);
+    if (count === 8) {
+        return [GUITAR_EXTRA_STRINGS[8], GUITAR_EXTRA_STRINGS[7], ...GUITAR_STRINGS];
+    }
+    if (count === 7) {
+        return [GUITAR_EXTRA_STRINGS[7], ...GUITAR_STRINGS];
+    }
+    return GUITAR_STRINGS;
+}
+
 export const UKULELE_STRINGS = [
     { id: 'u-4G', string: 4, note: 'G4', label: '4G', freq: 392.0, midi: 67 },
     { id: 'u-3C', string: 3, note: 'C4', label: '3C', freq: 261.63, midi: 60 },
@@ -53,6 +69,27 @@ export const BASS_STRINGS = [
     { id: 'b-2D', string: 2, note: 'D2', label: '2D', freq: 73.42, midi: 38 },
     { id: 'b-1G', string: 1, note: 'G2', label: '1G', freq: 98.0, midi: 43 },
 ];
+
+export function getBassStrings(stringCount = 4) {
+    const count = Number(stringCount);
+    if (count === 6) {
+        return [
+            { id: 'b6-6B', string: 6, note: 'B0', label: '6B', freq: 30.87, midi: 23 },
+            { id: 'b6-5E', string: 5, note: 'E1', label: '5E', freq: 41.2, midi: 28 },
+            { id: 'b6-4A', string: 4, note: 'A1', label: '4A', freq: 55.0, midi: 33 },
+            { id: 'b6-3D', string: 3, note: 'D2', label: '3D', freq: 73.42, midi: 38 },
+            { id: 'b6-2G', string: 2, note: 'G2', label: '2G', freq: 98.0, midi: 43 },
+            { id: 'b6-1C', string: 1, note: 'C3', label: '1C', freq: 130.81, midi: 48 },
+        ];
+    }
+    if (count === 5) {
+        return [
+            { id: 'b5-5B', string: 5, note: 'B0', label: '5B', freq: 30.87, midi: 23 },
+            ...BASS_STRINGS,
+        ];
+    }
+    return BASS_STRINGS;
+}
 
 export const VIOLIN_STRINGS = [
     { id: 'v-4G', string: 4, note: 'G3', label: '4G', freq: 196.0, midi: 55 },
@@ -127,6 +164,7 @@ export function buildChromaticNotes(startOctave = 4, octaveCount = 1) {
                 id: `chr-${name}${oct}`,
                 note: `${name}${oct}`,
                 label: `${name}${oct}`,
+                ...(midi === 60 ? { sublabel: '(middle C)' } : {}),
                 freq,
                 midi,
             });
