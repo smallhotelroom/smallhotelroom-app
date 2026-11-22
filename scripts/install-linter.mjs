@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
  * @file scripts/install-linter.mjs
- * @version 2.9.1
+ * @version 2.10.0
  * Installs the Small Hotel Room VS Code Linter & Syntax Decorator extension
  * into `~/.vscode/extensions/smallhotelroom.shr-song-linter-<version>` AND registers
- * it inside `~/.vscode/extensions/extensions.json`, loading `songSchema.js` and
- * `chordTransposer.js` directly from `src/shared/`.
- * Supports live switching between "Basic" (`basic`, default) and "Small Hotel Room" (`shr`),
- * plus multi-line `[choir]` block decoration.
+ * it inside `~/.vscode/extensions/extensions.json`, loading `songSchema.js` (including
+ * its split sub-modules) and `chordTransposer.js` directly from `src/shared/`, and
+ * recognizing song directories configured in `.env` (`SHR_OFFICIAL_DIR`,
+ * `SHR_CANCIONESDEJUAN_DIR`, `SHR_CURATED_DIR`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const __version__ = '2.9.1';
+export const __version__ = '2.10.0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,6 +25,7 @@ const LOCAL_TRANSPOSER_PATH = path.resolve(
     ROOT_DIR,
     'src/shared/chordTransposer.js'
 );
+const LOCAL_ENV_PATH = path.resolve(ROOT_DIR, '.env');
 
 if (!fs.existsSync(LOCAL_SCHEMA_PATH)) {
     console.error(`❌ Error: songSchema.js not found at ${LOCAL_SCHEMA_PATH}`);
@@ -99,25 +100,60 @@ const extensionHeader = `/**
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const vm = require('vm');
 
+const ROOT_DIR = ${JSON.stringify(ROOT_DIR)};
 const SCHEMA_PATH = ${JSON.stringify(LOCAL_SCHEMA_PATH)};
 const TRANSPOSER_PATH = ${JSON.stringify(LOCAL_TRANSPOSER_PATH)};
+const ENV_PATH = ${JSON.stringify(LOCAL_ENV_PATH)};
 `;
 
 const extensionBody = String.raw`
+const ENV_SONG_DIR_KEYS = [
+    'SHR_OFFICIAL_DIR',
+    'SHR_CANCIONESDEJUAN_DIR',
+    'SHR_CURATED_DIR',
+];
+
 let schemaMod = null;
 let transposerMod = null;
-let schemaMtime = 0;
-let transposerMtime = 0;
+let watchedModuleMtimes = new Map();
+let envMtime = -1;
+let configuredSongDirs = [];
 let decorationTypes = null;
 let currentSchemeId = null;
 
-function evaluateEsmFile(filePath, injectedModules = {}) {
-    const rawCode = fs.readFileSync(filePath, 'utf8');
+function resolveRelativeEsmPath(fromFile, spec) {
+    const baseDir = path.dirname(fromFile);
+    let candidate = path.resolve(baseDir, spec);
+    if (!fs.existsSync(candidate) && !candidate.endsWith('.js')) {
+        candidate += '.js';
+    }
+    return candidate;
+}
+
+function evaluateEsmFile(filePath, moduleCache = new Map(), mtimeMap = new Map()) {
+    const absPath = path.resolve(filePath);
+    if (moduleCache.has(absPath)) {
+        return moduleCache.get(absPath);
+    }
+
+    const stat = fs.statSync(absPath);
+    mtimeMap.set(absPath, stat.mtimeMs);
+
+    const rawCode = fs.readFileSync(absPath, 'utf8');
     const exportedNames = [];
+    const reExportSpecs = [];
 
     let transformed = rawCode
+        .replace(
+            /export\s*\*\s*from\s*['"]([^'"]+)['"];?/g,
+            (_, spec) => {
+                reExportSpecs.push(spec);
+                return '';
+            }
+        )
         .replace(
             /import\s*\{([\s\S]*?)\}\s*from\s*['"]([^'"]+)['"];?/g,
             (_, importsBlock, spec) => {
@@ -146,9 +182,16 @@ function evaluateEsmFile(filePath, injectedModules = {}) {
             return '';
         });
 
-    transformed += '\nmodule.exports = { ' + exportedNames.join(', ') + ' };\n';
+    for (const spec of reExportSpecs) {
+        transformed += '\nObject.assign(module.exports, __require(' + JSON.stringify(spec) + '));\n';
+    }
+    if (exportedNames.length > 0) {
+        transformed += '\nObject.assign(module.exports, { ' + exportedNames.join(', ') + ' });\n';
+    }
 
     const mod = { exports: {} };
+    moduleCache.set(absPath, mod.exports);
+
     const sandbox = {
         module: mod,
         exports: mod.exports,
@@ -167,14 +210,64 @@ function evaluateEsmFile(filePath, injectedModules = {}) {
         parseFloat,
         isNaN,
         __require: (spec) => {
-            if (spec.includes('songSchema')) {
-                return injectedModules.songSchema;
+            if (spec.startsWith('.')) {
+                const targetPath = resolveRelativeEsmPath(absPath, spec);
+                return evaluateEsmFile(targetPath, moduleCache, mtimeMap);
             }
             return {};
         },
     };
-    vm.runInNewContext(transformed, sandbox, { filename: filePath });
+    vm.runInNewContext(transformed, sandbox, { filename: absPath });
     return mod.exports;
+}
+
+function expandEnvDirPath(rawVal) {
+    let val = String(rawVal || '').trim();
+    if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+    ) {
+        val = val.slice(1, -1).trim();
+    }
+    if (!val) return null;
+    if (val === '~') {
+        val = os.homedir();
+    } else if (val.startsWith('~/') || val.startsWith('~\\')) {
+        val = path.join(os.homedir(), val.slice(2));
+    }
+    const resolved = path.resolve(ROOT_DIR, val);
+    return resolved.endsWith(path.sep) ? resolved : resolved + path.sep;
+}
+
+function ensureEnvDirsFresh() {
+    try {
+        if (!fs.existsSync(ENV_PATH)) {
+            if (envMtime !== 0) {
+                envMtime = 0;
+                configuredSongDirs = [];
+            }
+            return;
+        }
+        const stat = fs.statSync(ENV_PATH);
+        if (stat.mtimeMs === envMtime) return;
+
+        envMtime = stat.mtimeMs;
+        const dirs = [];
+        const lines = fs.readFileSync(ENV_PATH, 'utf8').split(/\r?\n/);
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eqIdx = trimmed.indexOf('=');
+            if (eqIdx === -1) continue;
+            const key = trimmed.slice(0, eqIdx).trim();
+            if (!ENV_SONG_DIR_KEYS.includes(key)) continue;
+            const resolved = expandEnvDirPath(trimmed.slice(eqIdx + 1));
+            if (resolved) dirs.push(resolved);
+        }
+        configuredSongDirs = dirs;
+    } catch (err) {
+        console.error('Small Hotel Room Linter failed to read .env:', err);
+    }
 }
 
 function getConfiguredSchemeId() {
@@ -236,22 +329,31 @@ function disposeDecorations() {
     decorationTypes = null;
 }
 
+function hasAnyWatchedModuleChanged() {
+    if (!schemaMod || !transposerMod || watchedModuleMtimes.size === 0) {
+        return true;
+    }
+    for (const [filePath, prevMtime] of watchedModuleMtimes.entries()) {
+        if (!fs.existsSync(filePath) || fs.statSync(filePath).mtimeMs !== prevMtime) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function ensureModulesFresh() {
     try {
-        const sStat = fs.statSync(SCHEMA_PATH);
-        const tStat = fs.statSync(TRANSPOSER_PATH);
+        ensureEnvDirsFresh();
         const desiredSchemeId = getConfiguredSchemeId();
-        const filesChanged =
-            !schemaMod ||
-            sStat.mtimeMs !== schemaMtime ||
-            tStat.mtimeMs !== transposerMtime;
+        const filesChanged = hasAnyWatchedModuleChanged();
         const schemeChanged = desiredSchemeId !== currentSchemeId || !decorationTypes;
 
         if (filesChanged) {
-            schemaMod = evaluateEsmFile(SCHEMA_PATH);
-            transposerMod = evaluateEsmFile(TRANSPOSER_PATH, { songSchema: schemaMod });
-            schemaMtime = sStat.mtimeMs;
-            transposerMtime = tStat.mtimeMs;
+            const moduleCache = new Map();
+            const nextMtimes = new Map();
+            schemaMod = evaluateEsmFile(SCHEMA_PATH, moduleCache, nextMtimes);
+            transposerMod = evaluateEsmFile(TRANSPOSER_PATH, moduleCache, nextMtimes);
+            watchedModuleMtimes = nextMtimes;
         }
 
         if (filesChanged || schemeChanged) {
@@ -272,6 +374,14 @@ function isCandidateSongDocument(doc) {
     const fsPath = doc.uri.fsPath || '';
     const ext = path.extname(fsPath).toLowerCase();
     if (ext !== '.md' && ext !== '.txt') return false;
+
+    const resolvedDocPath = path.resolve(fsPath);
+    for (const dirPrefix of configuredSongDirs) {
+        if (resolvedDocPath.startsWith(dirPrefix)) {
+            return true;
+        }
+    }
+
     const base = path.basename(fsPath, ext);
     return base.includes(' - ') || doc.getText().startsWith('---');
 }
@@ -794,5 +904,5 @@ console.log(`✅ Installed & registered ${EXT_ID} v${__version__} in:`);
 console.log(`   Folder:   ${EXT_DIR}`);
 console.log(`   Registry: ${EXT_JSON_PATH}`);
 console.log(
-    `💡 Reload VS Code ('Developer: Reload Window') — Linter now loads songSchema.js directly from Small Hotel Room!`
+    `💡 Reload VS Code ('Developer: Reload Window') — Linter now loads split songSchema.js modules & .env song dirs!`
 );
