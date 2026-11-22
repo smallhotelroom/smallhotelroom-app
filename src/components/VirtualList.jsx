@@ -1,14 +1,24 @@
 /**
  * @file src/components/VirtualList.jsx
- * @version 2.4.0
+ * @version 2.5.0
  */
 import React, { useEffect, useRef, useState } from 'react';
 
-export const __version__ = '2.4.0';
+export const __version__ = '2.5.0';
 
-export default function VirtualList({ items, itemHeight = 68, overscan = 8, renderItem }) {
+const virtualScrollCache = new Map();
+
+export default function VirtualList({
+    items,
+    itemHeight = 68,
+    overscan = 8,
+    scrollKey = null,
+    renderItem,
+}) {
     const containerRef = useRef(null);
-    const [scrollTop, setScrollTop] = useState(0);
+    const [scrollTop, setScrollTop] = useState(() =>
+        scrollKey ? virtualScrollCache.get(scrollKey) || 0 : 0
+    );
     const [viewportHeight, setViewportHeight] = useState(800);
 
     useEffect(() => {
@@ -27,13 +37,29 @@ export default function VirtualList({ items, itemHeight = 68, overscan = 8, rend
         return () => observer.disconnect();
     }, []);
 
-    // Reset scroll position when the dataset changes drastically (e.g., tab switch)
+    // Restore saved scroll position when returning to the same list, or reset to 0 on new dataset
     useEffect(() => {
-        if (containerRef.current) {
-            containerRef.current.scrollTop = 0;
-            setScrollTop(0);
+        const el = containerRef.current;
+        if (!el) {
+            return;
         }
-    }, [items]);
+        if (scrollKey && items.length > 0) {
+            const saved = virtualScrollCache.get(scrollKey) || 0;
+            el.scrollTop = saved;
+            setScrollTop(saved);
+            return;
+        }
+        el.scrollTop = 0;
+        setScrollTop(0);
+    }, [items, scrollKey]);
+
+    const handleScroll = (e) => {
+        const nextTop = e.currentTarget.scrollTop;
+        setScrollTop(nextTop);
+        if (scrollKey && items.length > 0) {
+            virtualScrollCache.set(scrollKey, nextTop);
+        }
+    };
 
     const totalHeight = items.length * itemHeight;
     const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
@@ -63,7 +89,7 @@ export default function VirtualList({ items, itemHeight = 68, overscan = 8, rend
         <main
             ref={containerRef}
             className="content-scroll"
-            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+            onScroll={handleScroll}
             style={{ position: 'relative' }}>
             <div style={{ height: totalHeight, position: 'relative', width: '100%' }}>
                 {visibleItems}

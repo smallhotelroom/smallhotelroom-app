@@ -1,6 +1,6 @@
 /**
  * @file src/screens/PlaylistScreen.jsx
- * @version 2.7.0
+ * @version 2.7.1
  */
 import React, { useContext, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, MoreVertical, Search } from 'lucide-react';
@@ -11,7 +11,7 @@ import executeQuery from '../shared/database';
 import { buildMultiTokenSearchClause } from '../shared/dbMerger';
 import { AppContext } from '../shared/AppContext';
 
-export const __version__ = '2.7.0';
+export const __version__ = '2.7.1';
 
 export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
     const { selectedPlaylistId } = routeParams;
@@ -25,6 +25,8 @@ export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
     const [playlistOrderStr, setPlaylistOrderStr] = useState('');
     const [playlistSearchStr, setPlaylistSearchStr] = useState('');
     const [searchInLyrics, setSearchInLyrics] = useState(false);
+
+    const scrollKey = `playlist|${selectedPlaylistId}|${playlistOrderStr}|${playlistSearchStr}|${searchInLyrics}|${hideCrawlerTabsEnabled}`;
 
     useEffect(() => {
         executeQuery('SELECT name FROM playlists WHERE id = ?;', [selectedPlaylistId])
@@ -93,6 +95,7 @@ export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
             <VirtualList
                 items={playlistSongs}
                 itemHeight={68}
+                scrollKey={scrollKey}
                 renderItem={(item) => (
                     <SongItem
                         id={item.id}

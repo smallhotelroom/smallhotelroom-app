@@ -1,10 +1,10 @@
 /**
  * @file src/screens/HomeScreen.jsx
- * @version 3.9.1
+ * @version 3.9.2
  * Canonical SHR HomeScreen layout:
  * 1) Header: Left { Menu (3 bars -> Settings), SHR } | Right { Metronome, Tuner, DarkMode, Search, MoreVertical (3 dots) }
  * 2) Top Tab Bar: PLAYLISTS | BANDS | SONGS directly under the header
- * 3) Infinite scroll list + Contextual 3-dots Sort Order Modal
+ * 3) Infinite scroll list + Contextual 3-dots Sort Order Modal + Pixel-perfect scroll restoration
  */
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { Menu, Moon, MoreVertical, Search, Sun, X } from 'lucide-react';
@@ -16,9 +16,10 @@ import {
     subscribeMetronomeState,
 } from '../shared/audioEngine';
 
-export const __version__ = '3.9.1';
+export const __version__ = '3.9.2';
 
 const PAGE_SIZE = 80;
+const homeScrollCache = new Map();
 
 export function MetronomeIcon({ size = 20 }) {
     return (
@@ -73,16 +74,20 @@ export default function HomeScreen({ onNavigate }) {
         dbRevision,
     } = useContext(AppContext);
 
+    const currentOrder = tabOrders[currentTab] || 'ASC';
+    const scrollKey = `${currentTab}|${currentOrder}|${homeSearchStr}|${hideCrawlerTabsEnabled}|${dbRevision}`;
+
     const [items, setItems] = useState([]);
-    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+    const [visibleCount, setVisibleCount] = useState(() => {
+        const saved = homeScrollCache.get(scrollKey);
+        return saved ? Math.max(PAGE_SIZE, saved.visibleCount) : PAGE_SIZE;
+    });
     const [metroState, setMetroState] = useState(() => getMetronomeState());
     const scrollRef = useRef(null);
 
     useEffect(() => {
         return subscribeMetronomeState((st) => setMetroState(st));
     }, []);
-
-    const currentOrder = tabOrders[currentTab] || 'ASC';
 
     const handleSelectSortOrder = (nextOrder) => {
         setTabOrders({ ...tabOrders, [currentTab]: nextOrder });
@@ -91,10 +96,8 @@ export default function HomeScreen({ onNavigate }) {
 
     useEffect(() => {
         let isMounted = true;
-        setVisibleCount(PAGE_SIZE);
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = 0;
-        }
+        const saved = homeScrollCache.get(scrollKey);
+        setVisibleCount(saved ? Math.max(PAGE_SIZE, saved.visibleCount) : PAGE_SIZE);
 
         async function loadTabItems() {
             try {
@@ -180,14 +183,36 @@ export default function HomeScreen({ onNavigate }) {
         return () => {
             isMounted = false;
         };
-    }, [currentTab, currentOrder, homeSearchStr, hideCrawlerTabsEnabled, dbRevision]);
+    }, [currentTab, currentOrder, homeSearchStr, hideCrawlerTabsEnabled, dbRevision, scrollKey]);
+
+    useEffect(() => {
+        if (!scrollRef.current || items.length === 0) {
+            return;
+        }
+        const saved = homeScrollCache.get(scrollKey);
+        const targetTop = saved ? saved.scrollTop : 0;
+        const rafId = requestAnimationFrame(() => {
+            if (scrollRef.current) {
+                scrollRef.current.scrollTop = targetTop;
+            }
+        });
+        return () => cancelAnimationFrame(rafId);
+    }, [items, scrollKey]);
 
     const handleScroll = (e) => {
         const el = e.currentTarget;
+        let nextVisible = visibleCount;
         if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) {
             if (visibleCount < items.length) {
-                setVisibleCount((prev) => Math.min(items.length, prev + PAGE_SIZE));
+                nextVisible = Math.min(items.length, visibleCount + PAGE_SIZE);
+                setVisibleCount(nextVisible);
             }
+        }
+        if (items.length > 0) {
+            homeScrollCache.set(scrollKey, {
+                scrollTop: el.scrollTop,
+                visibleCount: nextVisible,
+            });
         }
     };
 

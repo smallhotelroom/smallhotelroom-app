@@ -1,8 +1,8 @@
 /**
  * @file src/screens/BandScreen.jsx
- * @version 2.7.0
+ * @version 2.7.1
  */
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, MoreVertical, Search } from 'lucide-react';
 import SongItem from '../components/SongItem';
 import SearchBar from '../components/SearchBar';
@@ -10,7 +10,9 @@ import executeQuery from '../shared/database';
 import { buildMultiTokenSearchClause } from '../shared/dbMerger';
 import { AppContext } from '../shared/AppContext';
 
-export const __version__ = '2.7.0';
+export const __version__ = '2.7.1';
+
+const bandScrollCache = new Map();
 
 export default function BandScreen({ routeParams, onNavigate, onBack }) {
     const { selectedBandId } = routeParams;
@@ -25,6 +27,9 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
     const [bandOrderStr, setBandOrderStr] = useState('');
     const [bandSearchStr, setBandSearchStr] = useState('');
     const [searchInLyrics, setSearchInLyrics] = useState(false);
+
+    const scrollRef = useRef(null);
+    const scrollKey = `band|${selectedBandId}|${bandOrderStr}|${bandSearchStr}|${searchInLyrics}|${hideCrawlerTabsEnabled}`;
 
     useEffect(() => {
         executeQuery('SELECT name FROM bands WHERE id = ?;', [selectedBandId])
@@ -59,6 +64,25 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
             })
             .catch((err) => console.error(err));
     }, [selectedBandId, bandOrderStr, bandSearchStr, searchInLyrics, hideCrawlerTabsEnabled]);
+
+    useEffect(() => {
+        if (!scrollRef.current || (bandSongs.length === 0 && bandFeaturing.length === 0)) {
+            return;
+        }
+        const targetTop = bandScrollCache.get(scrollKey) || 0;
+        const rafId = requestAnimationFrame(() => {
+            if (scrollRef.current) {
+                scrollRef.current.scrollTop = targetTop;
+            }
+        });
+        return () => cancelAnimationFrame(rafId);
+    }, [bandSongs, bandFeaturing, scrollKey]);
+
+    const handleScroll = (e) => {
+        if (bandSongs.length > 0 || bandFeaturing.length > 0) {
+            bandScrollCache.set(scrollKey, e.currentTarget.scrollTop);
+        }
+    };
 
     return (
         <>
@@ -95,7 +119,7 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
                 />
             )}
 
-            <main className="content-scroll">
+            <main ref={scrollRef} className="content-scroll" onScroll={handleScroll}>
                 {bandSongs.map((item) => (
                     <SongItem
                         key={`song-${item.id}`}
