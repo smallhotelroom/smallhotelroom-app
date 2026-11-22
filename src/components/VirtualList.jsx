@@ -1,10 +1,10 @@
 /**
  * @file src/components/VirtualList.jsx
- * @version 2.5.0
+ * @version 2.6.0
  */
 import React, { useEffect, useRef, useState } from 'react';
 
-export const __version__ = '2.5.0';
+export const __version__ = '2.6.0';
 
 const virtualScrollCache = new Map();
 
@@ -13,6 +13,7 @@ export default function VirtualList({
     itemHeight = 68,
     overscan = 8,
     scrollKey = null,
+    containerProps = {},
     renderItem,
 }) {
     const containerRef = useRef(null);
@@ -59,6 +60,9 @@ export default function VirtualList({
         if (scrollKey && items.length > 0) {
             virtualScrollCache.set(scrollKey, nextTop);
         }
+        if (typeof containerProps.onScroll === 'function') {
+            containerProps.onScroll(e);
+        }
     };
 
     const totalHeight = items.length * itemHeight;
@@ -85,12 +89,15 @@ export default function VirtualList({
         );
     }
 
+    const { style: extraStyle, onScroll: _ignoredOnScroll, ...restContainerProps } = containerProps;
+
     return (
         <main
             ref={containerRef}
             className="content-scroll"
+            {...restContainerProps}
             onScroll={handleScroll}
-            style={{ position: 'relative' }}>
+            style={{ position: 'relative', ...extraStyle }}>
             <div style={{ height: totalHeight, position: 'relative', width: '100%' }}>
                 {visibleItems}
             </div>

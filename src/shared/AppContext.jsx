@@ -1,6 +1,6 @@
 /**
  * @file src/shared/AppContext.jsx
- * @version 3.6.0
+ * @version 3.7.0
  */
 import React, { createContext, useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -9,7 +9,7 @@ import { parseShrConfigYaml } from './shrConfig';
 import rawConfigYaml from '../../shr-config.yaml?raw';
 import { COLOR_THEMES } from './songSchema.js';
 
-export const __version__ = '3.6.0';
+export const __version__ = '3.7.0';
 
 export const SHR_CONFIG = parseShrConfigYaml(rawConfigYaml);
 export const APP_DEFAULTS = SHR_CONFIG.app;
@@ -29,6 +29,19 @@ const CHORD_DIAGRAMS_STORAGE_KEY = 'shr_chord_diagrams';
 const CHORD_INSTRUMENT_STORAGE_KEY = 'shr_chord_instrument';
 const DEFAULT_FONT_SIZE_STORAGE_KEY = 'shr_default_font_size';
 const LIST_VIEW_MODE_STORAGE_KEY = 'shr_list_view_mode';
+const LIST_SCALE_STORAGE_KEY = 'shr_list_scale';
+const GRID_SCALE_STORAGE_KEY = 'shr_grid_scale';
+
+export const LIST_SCALE_MIN = 0.8;
+export const LIST_SCALE_MAX = 1.7;
+export const GRID_SCALE_MIN = 0.75;
+export const GRID_SCALE_MAX = 1.7;
+
+function clampScale(val, min, max) {
+    const num = Number(val);
+    if (Number.isNaN(num)) return 1;
+    return Math.round(Math.max(min, Math.min(max, num)) * 100) / 100;
+}
 
 export function AppProvider({ children }) {
     // 0) Color Theme ('basic' = Basic default, 'shr' = Small Hotel Room)
@@ -77,6 +90,43 @@ export function AppProvider({ children }) {
             }
             return next;
         });
+    };
+
+    // Persistent Pinch-Zoom Scales (per List / Grid mode)
+    const [listScale, setListScaleState] = useState(() => {
+        if (typeof localStorage !== 'undefined') {
+            const saved = localStorage.getItem(LIST_SCALE_STORAGE_KEY);
+            if (saved !== null) {
+                return clampScale(saved, LIST_SCALE_MIN, LIST_SCALE_MAX);
+            }
+        }
+        return 1;
+    });
+
+    const setListScale = (nextVal) => {
+        const clamped = clampScale(nextVal, LIST_SCALE_MIN, LIST_SCALE_MAX);
+        setListScaleState(clamped);
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(LIST_SCALE_STORAGE_KEY, String(clamped));
+        }
+    };
+
+    const [gridScale, setGridScaleState] = useState(() => {
+        if (typeof localStorage !== 'undefined') {
+            const saved = localStorage.getItem(GRID_SCALE_STORAGE_KEY);
+            if (saved !== null) {
+                return clampScale(saved, GRID_SCALE_MIN, GRID_SCALE_MAX);
+            }
+        }
+        return 1;
+    });
+
+    const setGridScale = (nextVal) => {
+        const clamped = clampScale(nextVal, GRID_SCALE_MIN, GRID_SCALE_MAX);
+        setGridScaleState(clamped);
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(GRID_SCALE_STORAGE_KEY, String(clamped));
+        }
     };
 
     // 1) Compensate Capo / Drop (Default: false)
@@ -308,6 +358,10 @@ export function AppProvider({ children }) {
                 listViewMode,
                 setListViewMode,
                 toggleListViewMode,
+                listScale,
+                setListScale,
+                gridScale,
+                setGridScale,
                 compensateCapo,
                 setCompensateCapo,
                 fakeUkeEnabled,

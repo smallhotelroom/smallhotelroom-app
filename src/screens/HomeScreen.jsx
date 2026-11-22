@@ -1,10 +1,10 @@
 /**
  * @file src/screens/HomeScreen.jsx
- * @version 3.11.0
+ * @version 3.12.0
  * Canonical SHR HomeScreen layout:
  * 1) Header: Left { Menu (3 bars -> Settings), SHR } | Right { Metronome, Tuner, DarkMode, Search, MoreVertical (3 dots) }
  * 2) Top Tab Bar: PLAYLISTS | BANDS | SONGS + far-right global List/Grid toggle (tap icon or active tab to toggle)
- * 3) Infinite scroll list/grid + Contextual 3-dots Sort Order Modal + Pixel-perfect scroll restoration
+ * 3) Infinite scroll list/grid + Persistent per-mode pinch-to-zoom + Contextual 3-dots Sort Order Modal + Pixel-perfect scroll restoration
  */
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
@@ -19,13 +19,20 @@ import {
 } from 'lucide-react';
 import executeQuery from '../shared/database';
 import { buildMultiTokenSearchClause } from '../shared/dbMerger';
-import { AppContext } from '../shared/AppContext';
+import {
+    AppContext,
+    GRID_SCALE_MAX,
+    GRID_SCALE_MIN,
+    LIST_SCALE_MAX,
+    LIST_SCALE_MIN,
+} from '../shared/AppContext';
+import usePinchZoom from '../shared/usePinchZoom';
 import {
     getMetronomeState,
     subscribeMetronomeState,
 } from '../shared/audioEngine';
 
-export const __version__ = '3.11.0';
+export const __version__ = '3.12.0';
 
 const PAGE_SIZE = 80;
 const homeScrollCache = new Map();
@@ -83,10 +90,24 @@ export default function HomeScreen({ onNavigate }) {
         dbRevision,
         listViewMode = 'list',
         toggleListViewMode,
+        listScale = 1,
+        setListScale,
+        gridScale = 1,
+        setGridScale,
     } = useContext(AppContext);
 
+    const isGridView = listViewMode === 'grid';
     const currentOrder = tabOrders[currentTab] || 'ASC';
     const scrollKey = `${currentTab}|${listViewMode}|${currentOrder}|${homeSearchStr}|${hideCrawlerTabsEnabled}|${dbRevision}`;
+
+    const pinchHandlers = usePinchZoom(
+        isGridView ? gridScale : listScale,
+        isGridView ? setGridScale : setListScale,
+        {
+            min: isGridView ? GRID_SCALE_MIN : LIST_SCALE_MIN,
+            max: isGridView ? GRID_SCALE_MAX : LIST_SCALE_MAX,
+        }
+    );
 
     const [items, setItems] = useState([]);
     const [visibleCount, setVisibleCount] = useState(() => {
@@ -236,7 +257,6 @@ export default function HomeScreen({ onNavigate }) {
     };
 
     const visibleItems = items.slice(0, visibleCount);
-    const isGridView = listViewMode === 'grid';
 
     const sortOptions =
         currentTab === 'Playlists'
@@ -250,11 +270,13 @@ export default function HomeScreen({ onNavigate }) {
                   { id: 'DESC', label: 'Z → A (Descending)' },
               ];
 
+    const gridMinColPx = Math.round(148 * gridScale);
+    const gridGapPx = Math.max(8, Math.round(10 * gridScale));
     const gridContainerStyle = {
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
-        gap: 10,
-        padding: 12,
+        gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${gridMinColPx}px), 1fr))`,
+        gap: gridGapPx,
+        padding: Math.max(10, Math.round(12 * gridScale)),
         alignContent: 'start',
     };
 
@@ -262,17 +284,28 @@ export default function HomeScreen({ onNavigate }) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        minHeight: 76,
-        padding: '14px 12px',
+        minHeight: Math.max(56, Math.round(76 * gridScale)),
+        padding: `${Math.max(10, Math.round(14 * gridScale))}px ${Math.max(10, Math.round(12 * gridScale))}px`,
         borderRadius: 10,
         border: '1px solid var(--border-color)',
         background: 'var(--bg-surface)',
         color: 'var(--text-primary)',
-        fontSize: '1.05rem',
+        fontSize: `${1.05 * gridScale}rem`,
         lineHeight: 1.3,
         cursor: 'pointer',
         wordBreak: 'break-word',
         boxSizing: 'border-box',
+    };
+
+    const listRowStyle = {
+        minHeight: Math.max(48, Math.round(52 * listScale)),
+        padding: `${Math.max(10, Math.round(15 * listScale))}px 15px`,
+        fontSize: `${listScale}rem`,
+        lineHeight: 1.3,
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '0 6px',
     };
 
     const handleItemActivate = (item) => {
@@ -472,7 +505,9 @@ export default function HomeScreen({ onNavigate }) {
             <main
                 ref={scrollRef}
                 className="content-scroll"
-                onScroll={handleScroll}>
+                style={{ touchAction: 'pan-y' }}
+                onScroll={handleScroll}
+                {...pinchHandlers}>
                 <div style={isGridView ? gridContainerStyle : undefined}>
                     {visibleItems.map((item) => {
                         if (isGridView) {
@@ -488,7 +523,7 @@ export default function HomeScreen({ onNavigate }) {
                                     {currentTab === 'Songs' && item.band_name && (
                                         <div
                                             style={{
-                                                fontSize: '0.88rem',
+                                                fontSize: `${0.88 * gridScale}rem`,
                                                 color: 'var(--text-secondary)',
                                                 marginTop: 4,
                                             }}>
@@ -504,7 +539,7 @@ export default function HomeScreen({ onNavigate }) {
                                 <div
                                     key={item.id}
                                     className="list-item"
-                                    style={{ fontWeight: 700 }}
+                                    style={{ ...listRowStyle, fontWeight: 700 }}
                                     onClick={() => handleItemActivate(item)}>
                                     {item.name}
                                 </div>
@@ -515,8 +550,9 @@ export default function HomeScreen({ onNavigate }) {
                             <div
                                 key={item.id}
                                 className="list-item"
+                                style={listRowStyle}
                                 onClick={() => handleItemActivate(item)}>
-                                <strong>{item.name}</strong>{' '}
+                                <strong>{item.name}</strong>
                                 <span style={{ color: 'var(--text-secondary)' }}>
                                     [{item.band_name}]
                                 </span>

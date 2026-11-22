@@ -1,6 +1,6 @@
 /**
  * @file src/screens/BandScreen.jsx
- * @version 2.8.0
+ * @version 2.9.0
  */
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
@@ -15,9 +15,16 @@ import SongItem from '../components/SongItem';
 import SearchBar from '../components/SearchBar';
 import executeQuery from '../shared/database';
 import { buildMultiTokenSearchClause } from '../shared/dbMerger';
-import { AppContext } from '../shared/AppContext';
+import {
+    AppContext,
+    GRID_SCALE_MAX,
+    GRID_SCALE_MIN,
+    LIST_SCALE_MAX,
+    LIST_SCALE_MIN,
+} from '../shared/AppContext';
+import usePinchZoom from '../shared/usePinchZoom';
 
-export const __version__ = '2.8.0';
+export const __version__ = '2.9.0';
 
 const bandScrollCache = new Map();
 
@@ -27,6 +34,10 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
         hideCrawlerTabsEnabled,
         listViewMode = 'list',
         toggleListViewMode,
+        listScale = 1,
+        setListScale,
+        gridScale = 1,
+        setGridScale,
     } = useContext(AppContext);
 
     const [bandModalVisible, setBandModalVisible] = useState(false);
@@ -42,6 +53,15 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
     const isGridView = listViewMode === 'grid';
     const scrollRef = useRef(null);
     const scrollKey = `band|${selectedBandId}|${listViewMode}|${bandOrderStr}|${bandSearchStr}|${searchInLyrics}|${hideCrawlerTabsEnabled}`;
+
+    const pinchHandlers = usePinchZoom(
+        isGridView ? gridScale : listScale,
+        isGridView ? setGridScale : setListScale,
+        {
+            min: isGridView ? GRID_SCALE_MIN : LIST_SCALE_MIN,
+            max: isGridView ? GRID_SCALE_MAX : LIST_SCALE_MAX,
+        }
+    );
 
     useEffect(() => {
         executeQuery('SELECT name FROM bands WHERE id = ?;', [selectedBandId])
@@ -96,11 +116,13 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
         }
     };
 
+    const gridMinColPx = Math.round(148 * gridScale);
+    const gridGapPx = Math.max(8, Math.round(10 * gridScale));
     const gridContainerStyle = {
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
-        gap: 10,
-        padding: 12,
+        gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${gridMinColPx}px), 1fr))`,
+        gap: gridGapPx,
+        padding: Math.max(10, Math.round(12 * gridScale)),
         alignContent: 'start',
     };
 
@@ -108,13 +130,13 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        minHeight: 76,
-        padding: '14px 12px',
+        minHeight: Math.max(56, Math.round(76 * gridScale)),
+        padding: `${Math.max(10, Math.round(14 * gridScale))}px ${Math.max(10, Math.round(12 * gridScale))}px`,
         borderRadius: 10,
         border: '1px solid var(--border-color)',
         background: 'var(--bg-surface)',
         color: 'var(--text-primary)',
-        fontSize: '1.05rem',
+        fontSize: `${1.05 * gridScale}rem`,
         lineHeight: 1.3,
         cursor: 'pointer',
         wordBreak: 'break-word',
@@ -178,7 +200,12 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
                 />
             )}
 
-            <main ref={scrollRef} className="content-scroll" onScroll={handleScroll}>
+            <main
+                ref={scrollRef}
+                className="content-scroll"
+                style={{ touchAction: 'pan-y' }}
+                onScroll={handleScroll}
+                {...pinchHandlers}>
                 {isGridView ? (
                     <>
                         <div style={gridContainerStyle}>
@@ -221,7 +248,7 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
                                             {item.ft_band_name && (
                                                 <div
                                                     style={{
-                                                        fontSize: '0.88rem',
+                                                        fontSize: `${0.88 * gridScale}rem`,
                                                         color: 'var(--text-secondary)',
                                                         marginTop: 4,
                                                     }}>
@@ -245,6 +272,7 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
                                 ft_band_name=""
                                 onNavigate={onNavigate}
                                 originStr={bandName}
+                                scale={listScale}
                             />
                         ))}
 
@@ -260,6 +288,7 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
                                         ft_band_name={item.ft_band_name}
                                         onNavigate={onNavigate}
                                         originStr={bandName}
+                                        scale={listScale}
                                     />
                                 ))}
                             </>
