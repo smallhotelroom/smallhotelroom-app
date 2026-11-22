@@ -1,9 +1,9 @@
 /**
  * @file src/shared/audioEngine.js
- * @version 2.8.0
+ * @version 2.8.1
  * Web Audio API synthesis engine for Small Hotel Room:
  * - Tuner reference string definitions (`GUITAR_STRINGS`, `UKULELE_STRINGS`) & `playNoteFrequency`
- * - Polyphonic guitar/ukulele chord strumming (quantized to the metronome beat grid when active)
+ * - Polyphonic guitar/ukulele chord strumming (quantized to Track A count 1 when metronome is active)
  * - Multi-track Polyrhythm Metronome scheduler:
  *   - Track A defines the master beat cycle ("A follows BPM": each step on A = 1 beat at master BPM)
  *   - Supports up to 12 tracks (A..L) and up to 32 steps per track
@@ -11,7 +11,7 @@
  */
 import { APP_DEFAULTS } from './AppContext';
 
-export const __version__ = '2.8.0';
+export const __version__ = '2.8.1';
 
 let audioCtx = null;
 
@@ -281,7 +281,7 @@ function resetSchedulerCursors(ctx) {
 }
 
 /**
- * Returns the delay in seconds until the next Track A metronome beat.
+ * Returns the delay in seconds until the next Track A beat.
  * Returns 0 if the metronome is not playing or if called within 15ms of a beat.
  */
 export function getNextMetronomeBeatDelaySec(ctx = getAudioContext()) {
@@ -302,6 +302,35 @@ export function getNextMetronomeBeatDelaySec(ctx = getAudioContext()) {
     }
 
     return beatDurationSec - remainder;
+}
+
+/**
+ * Returns the delay in seconds until the next count 1 of line 1 (Track A, step 0).
+ * Returns 0 if the metronome is not playing or if called within 15ms after count 1.
+ */
+export function getNextMetronomeBarDelaySec(ctx = getAudioContext()) {
+    if (!metronomeState.isPlaying || !ctx) return 0;
+
+    const now = ctx.currentTime;
+    if (now <= masterCycleAnchorTime) {
+        return Math.max(0, masterCycleAnchorTime - now);
+    }
+
+    const masterBeatsInBar = Math.max(
+        1,
+        metronomeState.tracks[0]?.steps?.length || 4
+    );
+    const barDurationSec =
+        (60 / Math.max(30, metronomeState.bpm)) * masterBeatsInBar;
+    const elapsed = now - masterCycleAnchorTime;
+    const remainder = elapsed % barDurationSec;
+
+    // 15ms grace window right after count 1 so on-time taps trigger immediately
+    if (remainder < 0.015) {
+        return 0;
+    }
+
+    return barDurationSec - remainder;
 }
 
 function runSchedulerTick() {
@@ -617,7 +646,7 @@ export function playPolyphonicChord(
     if (!Array.isArray(frequencies) || frequencies.length === 0) return;
     const ctx = getAudioContext();
     const quantizeDelay = quantizeToMetronome
-        ? getNextMetronomeBeatDelaySec(ctx)
+        ? getNextMetronomeBarDelaySec(ctx)
         : 0;
     const perNoteGain = Math.min(0.24, 0.75 / Math.sqrt(frequencies.length));
     frequencies.forEach((freq, idx) => {
