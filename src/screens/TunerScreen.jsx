@@ -1,6 +1,6 @@
 /**
  * @file src/screens/TunerScreen.jsx
- * @version 1.3.0
+ * @version 1.3.1
  * Single-instrument Reference Ear Tuner with horizontal instrument switcher
  * (Guitar 6/7/8, Ukulele, Bass 4/5/6, Violin/Mandolin, Sax/Winds, Chromatic with octave & span controls,
  * and custom Frequency generator), Natural/Synth tone selector, optional hands-free Repeat Loop,
@@ -19,7 +19,7 @@ import {
     playNoteFrequency,
 } from '../shared/audioEngine';
 
-export const __version__ = '1.3.0';
+export const __version__ = '1.3.1';
 
 const TUNER_SOUND_MODE_KEY = 'shr_tuner_sound_mode';
 const TUNER_INSTRUMENT_KEY = 'shr_tuner_instrument';
@@ -33,7 +33,13 @@ const MIN_CUSTOM_FREQ = 20;
 const MAX_CUSTOM_FREQ = 2000;
 const LOG_MIN_FREQ = Math.log(MIN_CUSTOM_FREQ);
 const LOG_MAX_FREQ = Math.log(MAX_CUSTOM_FREQ);
-const FREQ_PRESETS = [415, 432, 440, 442, 444];
+const FREQ_PRESETS = [
+    { freq: 415, label: 'Baroque' },
+    { freq: 432, label: 'Verdi' },
+    { freq: 440, label: 'Standard' },
+    { freq: 442, label: 'Orchestra' },
+    { freq: 444, label: 'Bright' },
+];
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -857,20 +863,22 @@ export default function TunerScreen({ onBack }) {
                                 display: 'flex',
                                 flexWrap: 'wrap',
                                 justifyContent: 'center',
-                                gap: 6,
+                                gap: 8,
                             }}>
-                            {FREQ_PRESETS.map((preset) => {
-                                const isPresetActive = Math.abs(customFreq - preset) < 0.05;
+                            {FREQ_PRESETS.map(({ freq, label }) => {
+                                const isPresetActive = Math.abs(customFreq - freq) < 0.05;
                                 return (
                                     <button
-                                        key={preset}
+                                        key={freq}
                                         type="button"
-                                        onClick={() => updateCustomFreq(preset)}
+                                        onClick={() => updateCustomFreq(freq)}
                                         style={{
-                                            padding: '5px 11px',
-                                            borderRadius: 999,
-                                            fontWeight: 700,
-                                            fontSize: '0.8rem',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            padding: '6px 12px',
+                                            borderRadius: 10,
+                                            lineHeight: 1.2,
                                             border: isPresetActive
                                                 ? '1px solid var(--accent-color)'
                                                 : '1px solid var(--border-color)',
@@ -882,7 +890,18 @@ export default function TunerScreen({ onBack }) {
                                                 : 'var(--text-primary)',
                                             cursor: 'pointer',
                                         }}>
-                                        {preset} Hz
+                                        <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>
+                                            {freq} Hz
+                                        </span>
+                                        <span
+                                            style={{
+                                                fontSize: '0.7rem',
+                                                fontWeight: 600,
+                                                opacity: isPresetActive ? 0.9 : 0.7,
+                                                marginTop: 1,
+                                            }}>
+                                            {label}
+                                        </span>
                                     </button>
                                 );
                             })}
