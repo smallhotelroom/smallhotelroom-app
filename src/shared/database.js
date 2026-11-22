@@ -1,6 +1,6 @@
 /**
  * @file src/shared/database.js
- * @version 3.8.0
+ * @version 3.8.1
  */
 import * as sqlJsModule from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
@@ -13,7 +13,7 @@ import {
     populateDatabaseMeta,
 } from './dbMerger';
 
-export const __version__ = '3.8.0';
+export const __version__ = '3.8.1';
 
 const initSqlJs = sqlJsModule.default || sqlJsModule;
 
@@ -151,6 +151,9 @@ function ensureSchemaColumns(db) {
     try {
         db.run('ALTER TABLE songs ADD COLUMN tuning TEXT;');
     } catch {}
+    try {
+        db.run('ALTER TABLE songs ADD COLUMN youtube TEXT;');
+    } catch {}
 
     db.run(
         "UPDATE bands SET search_norm = REPLACE(LOWER(COALESCE(search_norm, name)), '''', '');"
@@ -209,7 +212,10 @@ export async function getDatabaseLayerStack() {
 
         await idbSet(IDB_KEY_STACK, stack);
         await idbSet(IDB_KEY_ACTIVE_LABEL, computeStackLabel(stack));
-    } else if (stack[0]?.builtin && !stack[0]?.generatedAt) {
+    } else if (
+        stack[0]?.builtin &&
+        (!stack[0]?.generatedAt || stack[0]?.schemaVersion !== DB_SCHEMA_VERSION)
+    ) {
         const SQL = await getSqlEngine();
         const defaultBytes = await fetchDefaultDbBytes();
         const tmpDb = new SQL.Database(defaultBytes);

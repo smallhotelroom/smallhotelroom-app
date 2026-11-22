@@ -1,10 +1,10 @@
 /**
  * @file src/components/SongInfoModal.jsx
- * @version 1.2.1
- * Modal displaying song metadata, minimalist header with theme-aware Share button,
- * Spotify / YouTube streaming links (via react-icons/fa), BPM metronome trigger, deduced key,
- * custom tuning, interactive language translation switcher (e.g. "Lang: English / Español"),
- * and featuring band links.
+ * @version 1.2.2
+ * Modal displaying song metadata, minimalist header with theme-aware Share button
+ * (sharing canonical app deep links with `?song=...&lang=...`), Spotify / YouTube
+ * streaming links (via react-icons/fa), BPM metronome trigger, deduced key, custom tuning,
+ * interactive language translation switcher (e.g. "Lang: English / Español"), and featuring band links.
  */
 import React, { useState } from 'react';
 import { Check, Share2, X } from 'lucide-react';
@@ -13,7 +13,9 @@ import { transposeChordToken } from '../shared/chordTransposer.js';
 import { MetronomeIcon } from '../screens/HomeScreen';
 import { setMetronomeBpm, setMetronomePlaying } from '../shared/audioEngine';
 
-export const __version__ = '1.2.1';
+export const __version__ = '1.2.2';
+
+const DEFAULT_APP_SHARE_ORIGIN = 'https://app.smallhotelroom.com';
 
 function resolveSpotifyUrl(raw) {
     if (!raw) return null;
@@ -27,6 +29,25 @@ function resolveYouTubeUrl(raw) {
     const str = String(raw).trim();
     if (!str) return null;
     return str.startsWith('http') ? str : `https://www.youtube.com/watch?v=${str}`;
+}
+
+function buildSongDeepLink(songData, activeTranslationLang = null) {
+    const baseUrl =
+        typeof window !== 'undefined' && window.location.protocol.startsWith('http')
+            ? `${window.location.origin}${window.location.pathname}`
+            : `${DEFAULT_APP_SHARE_ORIGIN}/`;
+
+    const songKey = songData.content_hash || songData.id;
+    const params = new URLSearchParams();
+    if (songKey !== undefined && songKey !== null && String(songKey).trim() !== '') {
+        params.set('song', String(songKey));
+    }
+    if (activeTranslationLang) {
+        params.set('lang', activeTranslationLang);
+    }
+
+    const qs = params.toString();
+    return qs ? `${baseUrl}?${qs}` : baseUrl;
 }
 
 /**
@@ -81,20 +102,14 @@ export default function SongInfoModal({
 
     const handleShare = async () => {
         const shareTitle = bandName ? `${songData.name} - ${bandName}` : songData.name;
-        const shareUrl =
-            songData.url ||
-            spotifyUrl ||
-            youtubeUrl ||
-            (typeof window !== 'undefined' && window.location.protocol.startsWith('http')
-                ? window.location.href
-                : '');
+        const shareUrl = buildSongDeepLink(songData, activeTranslationLang);
 
         if (typeof navigator !== 'undefined' && navigator.share) {
             try {
                 await navigator.share({
                     title: shareTitle,
-                    text: shareTitle,
-                    ...(shareUrl ? { url: shareUrl } : {}),
+                    text: `Check out the chords and lyrics for ${songData.name}`,
+                    url: shareUrl,
                 });
                 return;
             } catch {
@@ -102,10 +117,9 @@ export default function SongInfoModal({
             }
         }
 
-        const fallbackText = shareUrl || shareTitle;
         if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
             try {
-                await navigator.clipboard.writeText(fallbackText);
+                await navigator.clipboard.writeText(shareUrl);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1800);
             } catch {
@@ -146,7 +160,7 @@ export default function SongInfoModal({
                         <button
                             type="button"
                             className="icon-btn"
-                            title={copied ? 'Copied!' : 'Share this song'}
+                            title={copied ? 'Link copied!' : 'Share this song'}
                             aria-label="Share"
                             onClick={handleShare}
                             style={{

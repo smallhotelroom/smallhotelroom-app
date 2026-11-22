@@ -1,6 +1,6 @@
 /**
  * @file src/screens/SongScreen.jsx
- * @version 3.5.1
+ * @version 3.5.2
  */
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Music, Sliders, Square } from 'lucide-react';
@@ -41,10 +41,10 @@ import {
     triggerPatternStepOnChord,
 } from '../shared/songChordPlayer';
 
-export const __version__ = '3.5.1';
+export const __version__ = '3.5.2';
 
 export default function SongScreen({ routeParams, onNavigate, onBack }) {
-    const { selectedSongId, originStr } = routeParams;
+    const { selectedSongId, originStr, initialLang = null } = routeParams;
     const {
         colorTheme = 'basic',
         compensateCapo = false,
@@ -74,7 +74,7 @@ export default function SongScreen({ routeParams, onNavigate, onBack }) {
     const [songModalVisible, setSongModalVisible] = useState(false);
     const [strumModalVisible, setStrumModalVisible] = useState(false);
     const [selectedDiagramChord, setSelectedDiagramChord] = useState(null);
-    const [activeTranslationLang, setActiveTranslationLang] = useState(null);
+    const [activeTranslationLang, setActiveTranslationLang] = useState(initialLang);
     const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
     const [songData, setSongData] = useState(null);
     const [bandName, setBandName] = useState('');
@@ -156,7 +156,7 @@ export default function SongScreen({ routeParams, onNavigate, onBack }) {
 
     useEffect(() => {
         let isMounted = true;
-        setActiveTranslationLang(null);
+        setActiveTranslationLang(initialLang || null);
         setChordPlayActive(false);
         setActiveChordSeqIdx(null);
         setActiveStepInBar(-1);
@@ -201,7 +201,7 @@ export default function SongScreen({ routeParams, onNavigate, onBack }) {
         return () => {
             isMounted = false;
         };
-    }, [selectedSongId]);
+    }, [selectedSongId, initialLang]);
 
     const songCapo = Number(songData?.capo || 0);
     const visualOffset = useMemo(() => {

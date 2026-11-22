@@ -1,10 +1,11 @@
 /**
  * @file src/App.jsx
- * @version 2.3.0
+ * @version 2.4.0
  */
 import React, { useContext, useEffect, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { AppContext, AppProvider } from './shared/AppContext';
+import executeQuery from './shared/database';
 import HomeScreen from './screens/HomeScreen';
 import PlaylistScreen from './screens/PlaylistScreen';
 import BandScreen from './screens/BandScreen';
@@ -13,7 +14,13 @@ import SettingsScreen from './screens/SettingsScreen';
 import TunerScreen from './screens/TunerScreen';
 import MetronomeScreen from './screens/MetronomeScreen';
 
-export const __version__ = '2.3.0';
+export const __version__ = '2.4.0';
+
+function originIdToLabel(originId) {
+    if (Number(originId) === 1) return 'ZK';
+    if (Number(originId) === 2) return 'LK';
+    return 'SHR';
+}
 
 function AppShell() {
     const { topSpaceEnabled } = useContext(AppContext);
@@ -26,6 +33,57 @@ function AppShell() {
     const goBack = () => {
         setNavStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
     };
+
+    // Deep-link support: `?song=<content_hash|id>&lang=<lang>`
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.location?.search) {
+            return;
+        }
+        const params = new URLSearchParams(window.location.search);
+        const songParam = params.get('song');
+        const langParam = params.get('lang');
+        if (!songParam) {
+            return;
+        }
+
+        let cancelled = false;
+        async function openSharedSong() {
+            try {
+                let res = await executeQuery(
+                    'SELECT id, origin_id FROM songs WHERE content_hash = ? LIMIT 1;',
+                    [songParam]
+                );
+                if (res.rows.length === 0 && /^\d+$/.test(songParam)) {
+                    res = await executeQuery(
+                        'SELECT id, origin_id FROM songs WHERE id = ? LIMIT 1;',
+                        [parseInt(songParam, 10)]
+                    );
+                }
+                if (cancelled || res.rows.length === 0) {
+                    return;
+                }
+                const row = res.rows.item(0);
+                setNavStack([
+                    { screen: 'Home', params: {} },
+                    {
+                        screen: 'Song',
+                        params: {
+                            selectedSongId: row.id,
+                            originStr: originIdToLabel(row.origin_id),
+                            initialLang: langParam || null,
+                        },
+                    },
+                ]);
+            } catch (err) {
+                console.error('Failed to open shared song link:', err);
+            }
+        }
+
+        openSharedSong();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     useEffect(() => {
         let listenerHandle = null;
