@@ -1,13 +1,22 @@
 /**
  * @file src/screens/HomeScreen.jsx
- * @version 3.9.2
+ * @version 3.10.1
  * Canonical SHR HomeScreen layout:
  * 1) Header: Left { Menu (3 bars -> Settings), SHR } | Right { Metronome, Tuner, DarkMode, Search, MoreVertical (3 dots) }
- * 2) Top Tab Bar: PLAYLISTS | BANDS | SONGS directly under the header
- * 3) Infinite scroll list + Contextual 3-dots Sort Order Modal + Pixel-perfect scroll restoration
+ * 2) Top Tab Bar: PLAYLISTS | BANDS | SONGS + far-right List/Grid toggle (tap icon or active tab to toggle)
+ * 3) Infinite scroll list/grid + Contextual 3-dots Sort Order Modal + Pixel-perfect scroll restoration
  */
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { Menu, Moon, MoreVertical, Search, Sun, X } from 'lucide-react';
+import {
+    LayoutGrid,
+    List,
+    Menu,
+    Moon,
+    MoreVertical,
+    Search,
+    Sun,
+    X,
+} from 'lucide-react';
 import executeQuery from '../shared/database';
 import { buildMultiTokenSearchClause } from '../shared/dbMerger';
 import { AppContext } from '../shared/AppContext';
@@ -16,10 +25,30 @@ import {
     subscribeMetronomeState,
 } from '../shared/audioEngine';
 
-export const __version__ = '3.9.2';
+export const __version__ = '3.10.1';
 
 const PAGE_SIZE = 80;
+const VIEW_MODES_STORAGE_KEY = 'shr_home_view_modes';
 const homeScrollCache = new Map();
+
+function loadInitialViewModes() {
+    const defaults = { Playlists: 'list', Bands: 'list', Songs: 'list' };
+    if (typeof localStorage === 'undefined') {
+        return defaults;
+    }
+    try {
+        const raw = localStorage.getItem(VIEW_MODES_STORAGE_KEY);
+        if (!raw) return defaults;
+        const parsed = JSON.parse(raw);
+        return {
+            Playlists: parsed.Playlists === 'grid' ? 'grid' : 'list',
+            Bands: parsed.Bands === 'grid' ? 'grid' : 'list',
+            Songs: parsed.Songs === 'grid' ? 'grid' : 'list',
+        };
+    } catch {
+        return defaults;
+    }
+}
 
 export function MetronomeIcon({ size = 20 }) {
     return (
@@ -74,8 +103,10 @@ export default function HomeScreen({ onNavigate }) {
         dbRevision,
     } = useContext(AppContext);
 
+    const [viewModeByTab, setViewModeByTab] = useState(loadInitialViewModes);
+    const currentViewMode = viewModeByTab[currentTab] || 'list';
     const currentOrder = tabOrders[currentTab] || 'ASC';
-    const scrollKey = `${currentTab}|${currentOrder}|${homeSearchStr}|${hideCrawlerTabsEnabled}|${dbRevision}`;
+    const scrollKey = `${currentTab}|${currentViewMode}|${currentOrder}|${homeSearchStr}|${hideCrawlerTabsEnabled}|${dbRevision}`;
 
     const [items, setItems] = useState([]);
     const [visibleCount, setVisibleCount] = useState(() => {
@@ -88,6 +119,32 @@ export default function HomeScreen({ onNavigate }) {
     useEffect(() => {
         return subscribeMetronomeState((st) => setMetroState(st));
     }, []);
+
+    const toggleTabViewMode = (tabName) => {
+        setViewModeByTab((prev) => {
+            const nextMode = prev[tabName] === 'grid' ? 'list' : 'grid';
+            const updated = { ...prev, [tabName]: nextMode };
+            if (typeof localStorage !== 'undefined') {
+                try {
+                    localStorage.setItem(
+                        VIEW_MODES_STORAGE_KEY,
+                        JSON.stringify(updated)
+                    );
+                } catch {
+                    // Ignore storage quota errors
+                }
+            }
+            return updated;
+        });
+    };
+
+    const handleTabClick = (tabName) => {
+        if (currentTab === tabName) {
+            toggleTabViewMode(tabName);
+            return;
+        }
+        setCurrentTab(tabName);
+    };
 
     const handleSelectSortOrder = (nextOrder) => {
         setTabOrders({ ...tabOrders, [currentTab]: nextOrder });
@@ -217,6 +274,7 @@ export default function HomeScreen({ onNavigate }) {
     };
 
     const visibleItems = items.slice(0, visibleCount);
+    const isGridView = currentViewMode === 'grid';
 
     const sortOptions =
         currentTab === 'Playlists'
@@ -229,6 +287,68 @@ export default function HomeScreen({ onNavigate }) {
                   { id: 'ASC', label: 'A → Z (Ascending)' },
                   { id: 'DESC', label: 'Z → A (Descending)' },
               ];
+
+    const gridContainerStyle = {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
+        gap: 10,
+        padding: 12,
+        alignContent: 'start',
+    };
+
+    const gridCardStyle = {
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        minHeight: 76,
+        padding: '14px 12px',
+        borderRadius: 10,
+        border: '1px solid var(--border-color)',
+        background: 'var(--bg-surface)',
+        color: 'var(--text-primary)',
+        fontSize: '1.05rem',
+        lineHeight: 1.3,
+        cursor: 'pointer',
+        wordBreak: 'break-word',
+        boxSizing: 'border-box',
+    };
+
+    const handleItemActivate = (item) => {
+        if (currentTab === 'Playlists') {
+            onNavigate({
+                screen: 'Playlist',
+                params: {
+                    selectedPlaylistId: item.id,
+                    selectedPlaylistName: item.name,
+                },
+            });
+            return;
+        }
+        if (currentTab === 'Bands') {
+            onNavigate({
+                screen: 'Band',
+                params: {
+                    selectedBandId: item.id,
+                    selectedBandName: item.name,
+                },
+            });
+            return;
+        }
+        onNavigate({
+            screen: 'Song',
+            params: {
+                selectedSongId: item.id,
+                originStr: item.band_name,
+            },
+        });
+    };
+
+    const handleCardKeyDown = (e, item) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleItemActivate(item);
+        }
+    };
 
     return (
         <>
@@ -322,20 +442,29 @@ export default function HomeScreen({ onNavigate }) {
                 className="tabs-bar"
                 style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gridTemplateColumns: '1fr 1fr 1fr auto',
                     borderBottom: '1px solid var(--border-color)',
                     background: 'var(--bg-surface)',
                     flexShrink: 0,
                 }}>
                 {['Playlists', 'Bands', 'Songs'].map((tabName) => {
                     const isActive = currentTab === tabName;
+                    const tabMode = viewModeByTab[tabName] || 'list';
                     return (
                         <button
                             key={tabName}
                             type="button"
                             className={`tab-btn ${isActive ? 'active' : ''}`}
-                            onClick={() => setCurrentTab(tabName)}
+                            title={
+                                isActive
+                                    ? `Switch ${tabName} to ${tabMode === 'grid' ? 'list' : 'grid'} view`
+                                    : tabName
+                            }
+                            onClick={() => handleTabClick(tabName)}
                             style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                                 padding: '13px 8px',
                                 border: 'none',
                                 borderBottom: isActive
@@ -355,71 +484,85 @@ export default function HomeScreen({ onNavigate }) {
                         </button>
                     );
                 })}
+                <button
+                    type="button"
+                    aria-label={`Switch ${currentTab} to ${isGridView ? 'list' : 'grid'} view`}
+                    title={`Switch ${currentTab} to ${isGridView ? 'list' : 'grid'} view`}
+                    onClick={() => toggleTabViewMode(currentTab)}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0 12px',
+                        border: 'none',
+                        borderBottom: '3px solid transparent',
+                        background: 'transparent',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                    }}>
+                    {isGridView ? (
+                        <LayoutGrid size={16} aria-hidden="true" />
+                    ) : (
+                        <List size={16} aria-hidden="true" />
+                    )}
+                </button>
             </nav>
 
             <main
                 ref={scrollRef}
                 className="content-scroll"
                 onScroll={handleScroll}>
-                {visibleItems.map((item) => {
-                    if (currentTab === 'Playlists') {
+                <div style={isGridView ? gridContainerStyle : undefined}>
+                    {visibleItems.map((item) => {
+                        if (isGridView) {
+                            return (
+                                <div
+                                    key={item.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    style={gridCardStyle}
+                                    onClick={() => handleItemActivate(item)}
+                                    onKeyDown={(e) => handleCardKeyDown(e, item)}>
+                                    <div style={{ fontWeight: 700 }}>{item.name}</div>
+                                    {currentTab === 'Songs' && item.band_name && (
+                                        <div
+                                            style={{
+                                                fontSize: '0.88rem',
+                                                color: 'var(--text-secondary)',
+                                                marginTop: 4,
+                                            }}>
+                                            {item.band_name}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        }
+
+                        if (currentTab === 'Playlists' || currentTab === 'Bands') {
+                            return (
+                                <div
+                                    key={item.id}
+                                    className="list-item"
+                                    style={{ fontWeight: 700 }}
+                                    onClick={() => handleItemActivate(item)}>
+                                    {item.name}
+                                </div>
+                            );
+                        }
+
                         return (
                             <div
                                 key={item.id}
                                 className="list-item"
-                                style={{ fontWeight: 700 }}
-                                onClick={() =>
-                                    onNavigate({
-                                        screen: 'Playlist',
-                                        params: {
-                                            selectedPlaylistId: item.id,
-                                            selectedPlaylistName: item.name,
-                                        },
-                                    })
-                                }>
-                                {item.name}
+                                onClick={() => handleItemActivate(item)}>
+                                <strong>{item.name}</strong>{' '}
+                                <span style={{ color: 'var(--text-secondary)' }}>
+                                    [{item.band_name}]
+                                </span>
                             </div>
                         );
-                    }
-                    if (currentTab === 'Bands') {
-                        return (
-                            <div
-                                key={item.id}
-                                className="list-item"
-                                style={{ fontWeight: 700 }}
-                                onClick={() =>
-                                    onNavigate({
-                                        screen: 'Band',
-                                        params: {
-                                            selectedBandId: item.id,
-                                            selectedBandName: item.name,
-                                        },
-                                    })
-                                }>
-                                {item.name}
-                            </div>
-                        );
-                    }
-                    return (
-                        <div
-                            key={item.id}
-                            className="list-item"
-                            onClick={() =>
-                                onNavigate({
-                                    screen: 'Song',
-                                    params: {
-                                        selectedSongId: item.id,
-                                        originStr: item.band_name,
-                                    },
-                                })
-                            }>
-                            <strong>{item.name}</strong>{' '}
-                            <span style={{ color: 'var(--text-secondary)' }}>
-                                [{item.band_name}]
-                            </span>
-                        </div>
-                    );
-                })}
+                    })}
+                </div>
             </main>
 
             {homeModalVisible && (
