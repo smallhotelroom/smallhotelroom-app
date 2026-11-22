@@ -1,9 +1,9 @@
 /**
  * @file src/screens/HomeScreen.jsx
- * @version 3.10.1
+ * @version 3.11.0
  * Canonical SHR HomeScreen layout:
  * 1) Header: Left { Menu (3 bars -> Settings), SHR } | Right { Metronome, Tuner, DarkMode, Search, MoreVertical (3 dots) }
- * 2) Top Tab Bar: PLAYLISTS | BANDS | SONGS + far-right List/Grid toggle (tap icon or active tab to toggle)
+ * 2) Top Tab Bar: PLAYLISTS | BANDS | SONGS + far-right global List/Grid toggle (tap icon or active tab to toggle)
  * 3) Infinite scroll list/grid + Contextual 3-dots Sort Order Modal + Pixel-perfect scroll restoration
  */
 import React, { useContext, useEffect, useRef, useState } from 'react';
@@ -25,30 +25,10 @@ import {
     subscribeMetronomeState,
 } from '../shared/audioEngine';
 
-export const __version__ = '3.10.1';
+export const __version__ = '3.11.0';
 
 const PAGE_SIZE = 80;
-const VIEW_MODES_STORAGE_KEY = 'shr_home_view_modes';
 const homeScrollCache = new Map();
-
-function loadInitialViewModes() {
-    const defaults = { Playlists: 'list', Bands: 'list', Songs: 'list' };
-    if (typeof localStorage === 'undefined') {
-        return defaults;
-    }
-    try {
-        const raw = localStorage.getItem(VIEW_MODES_STORAGE_KEY);
-        if (!raw) return defaults;
-        const parsed = JSON.parse(raw);
-        return {
-            Playlists: parsed.Playlists === 'grid' ? 'grid' : 'list',
-            Bands: parsed.Bands === 'grid' ? 'grid' : 'list',
-            Songs: parsed.Songs === 'grid' ? 'grid' : 'list',
-        };
-    } catch {
-        return defaults;
-    }
-}
 
 export function MetronomeIcon({ size = 20 }) {
     return (
@@ -101,12 +81,12 @@ export default function HomeScreen({ onNavigate }) {
         setDarkMode,
         hideCrawlerTabsEnabled = true,
         dbRevision,
+        listViewMode = 'list',
+        toggleListViewMode,
     } = useContext(AppContext);
 
-    const [viewModeByTab, setViewModeByTab] = useState(loadInitialViewModes);
-    const currentViewMode = viewModeByTab[currentTab] || 'list';
     const currentOrder = tabOrders[currentTab] || 'ASC';
-    const scrollKey = `${currentTab}|${currentViewMode}|${currentOrder}|${homeSearchStr}|${hideCrawlerTabsEnabled}|${dbRevision}`;
+    const scrollKey = `${currentTab}|${listViewMode}|${currentOrder}|${homeSearchStr}|${hideCrawlerTabsEnabled}|${dbRevision}`;
 
     const [items, setItems] = useState([]);
     const [visibleCount, setVisibleCount] = useState(() => {
@@ -120,27 +100,9 @@ export default function HomeScreen({ onNavigate }) {
         return subscribeMetronomeState((st) => setMetroState(st));
     }, []);
 
-    const toggleTabViewMode = (tabName) => {
-        setViewModeByTab((prev) => {
-            const nextMode = prev[tabName] === 'grid' ? 'list' : 'grid';
-            const updated = { ...prev, [tabName]: nextMode };
-            if (typeof localStorage !== 'undefined') {
-                try {
-                    localStorage.setItem(
-                        VIEW_MODES_STORAGE_KEY,
-                        JSON.stringify(updated)
-                    );
-                } catch {
-                    // Ignore storage quota errors
-                }
-            }
-            return updated;
-        });
-    };
-
     const handleTabClick = (tabName) => {
         if (currentTab === tabName) {
-            toggleTabViewMode(tabName);
+            toggleListViewMode();
             return;
         }
         setCurrentTab(tabName);
@@ -274,7 +236,7 @@ export default function HomeScreen({ onNavigate }) {
     };
 
     const visibleItems = items.slice(0, visibleCount);
-    const isGridView = currentViewMode === 'grid';
+    const isGridView = listViewMode === 'grid';
 
     const sortOptions =
         currentTab === 'Playlists'
@@ -449,7 +411,6 @@ export default function HomeScreen({ onNavigate }) {
                 }}>
                 {['Playlists', 'Bands', 'Songs'].map((tabName) => {
                     const isActive = currentTab === tabName;
-                    const tabMode = viewModeByTab[tabName] || 'list';
                     return (
                         <button
                             key={tabName}
@@ -457,7 +418,7 @@ export default function HomeScreen({ onNavigate }) {
                             className={`tab-btn ${isActive ? 'active' : ''}`}
                             title={
                                 isActive
-                                    ? `Switch ${tabName} to ${tabMode === 'grid' ? 'list' : 'grid'} view`
+                                    ? `Switch to ${isGridView ? 'list' : 'grid'} view`
                                     : tabName
                             }
                             onClick={() => handleTabClick(tabName)}
@@ -486,9 +447,9 @@ export default function HomeScreen({ onNavigate }) {
                 })}
                 <button
                     type="button"
-                    aria-label={`Switch ${currentTab} to ${isGridView ? 'list' : 'grid'} view`}
-                    title={`Switch ${currentTab} to ${isGridView ? 'list' : 'grid'} view`}
-                    onClick={() => toggleTabViewMode(currentTab)}
+                    aria-label={`Switch to ${isGridView ? 'list' : 'grid'} view`}
+                    title={`Switch to ${isGridView ? 'list' : 'grid'} view`}
+                    onClick={toggleListViewMode}
                     style={{
                         display: 'inline-flex',
                         alignItems: 'center',

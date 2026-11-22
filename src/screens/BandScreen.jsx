@@ -1,22 +1,33 @@
 /**
  * @file src/screens/BandScreen.jsx
- * @version 2.7.1
+ * @version 2.8.0
  */
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, MoreVertical, Search } from 'lucide-react';
+import {
+    ArrowLeft,
+    ArrowRight,
+    LayoutGrid,
+    List,
+    MoreVertical,
+    Search,
+} from 'lucide-react';
 import SongItem from '../components/SongItem';
 import SearchBar from '../components/SearchBar';
 import executeQuery from '../shared/database';
 import { buildMultiTokenSearchClause } from '../shared/dbMerger';
 import { AppContext } from '../shared/AppContext';
 
-export const __version__ = '2.7.1';
+export const __version__ = '2.8.0';
 
 const bandScrollCache = new Map();
 
 export default function BandScreen({ routeParams, onNavigate, onBack }) {
     const { selectedBandId } = routeParams;
-    const { hideCrawlerTabsEnabled } = useContext(AppContext);
+    const {
+        hideCrawlerTabsEnabled,
+        listViewMode = 'list',
+        toggleListViewMode,
+    } = useContext(AppContext);
 
     const [bandModalVisible, setBandModalVisible] = useState(false);
     const [bandName, setBandName] = useState('');
@@ -28,8 +39,9 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
     const [bandSearchStr, setBandSearchStr] = useState('');
     const [searchInLyrics, setSearchInLyrics] = useState(false);
 
+    const isGridView = listViewMode === 'grid';
     const scrollRef = useRef(null);
-    const scrollKey = `band|${selectedBandId}|${bandOrderStr}|${bandSearchStr}|${searchInLyrics}|${hideCrawlerTabsEnabled}`;
+    const scrollKey = `band|${selectedBandId}|${listViewMode}|${bandOrderStr}|${bandSearchStr}|${searchInLyrics}|${hideCrawlerTabsEnabled}`;
 
     useEffect(() => {
         executeQuery('SELECT name FROM bands WHERE id = ?;', [selectedBandId])
@@ -84,6 +96,41 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
         }
     };
 
+    const gridContainerStyle = {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
+        gap: 10,
+        padding: 12,
+        alignContent: 'start',
+    };
+
+    const gridCardStyle = {
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        minHeight: 76,
+        padding: '14px 12px',
+        borderRadius: 10,
+        border: '1px solid var(--border-color)',
+        background: 'var(--bg-surface)',
+        color: 'var(--text-primary)',
+        fontSize: '1.05rem',
+        lineHeight: 1.3,
+        cursor: 'pointer',
+        wordBreak: 'break-word',
+        boxSizing: 'border-box',
+    };
+
+    const openSong = (songId) => {
+        onNavigate({
+            screen: 'Song',
+            params: {
+                selectedSongId: songId,
+                originStr: bandName,
+            },
+        });
+    };
+
     return (
         <>
             <header className="app-header">
@@ -96,10 +143,22 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
                 <div className="header-actions">
                     <button
                         className="icon-btn"
+                        title="Search"
                         onClick={() => setBandSearchVisible(!bandSearchVisible)}>
                         <Search size={22} />
                     </button>
-                    <button className="icon-btn" onClick={() => setBandModalVisible(true)}>
+                    <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Switch to ${isGridView ? 'list' : 'grid'} view`}
+                        title={`Switch to ${isGridView ? 'list' : 'grid'} view`}
+                        onClick={toggleListViewMode}>
+                        {isGridView ? <LayoutGrid size={20} /> : <List size={20} />}
+                    </button>
+                    <button
+                        className="icon-btn"
+                        title="Sort Options"
+                        onClick={() => setBandModalVisible(true)}>
                         <MoreVertical size={22} />
                     </button>
                 </div>
@@ -120,32 +179,91 @@ export default function BandScreen({ routeParams, onNavigate, onBack }) {
             )}
 
             <main ref={scrollRef} className="content-scroll" onScroll={handleScroll}>
-                {bandSongs.map((item) => (
-                    <SongItem
-                        key={`song-${item.id}`}
-                        id={item.id}
-                        name={item.name}
-                        band_name=""
-                        ft_band_name=""
-                        onNavigate={onNavigate}
-                        originStr={bandName}
-                    />
-                ))}
-
-                {bandFeaturing.length > 0 && (
+                {isGridView ? (
                     <>
-                        <div className="section-header">Also featured in:</div>
-                        {bandFeaturing.map((item) => (
+                        <div style={gridContainerStyle}>
+                            {bandSongs.map((item) => (
+                                <div
+                                    key={`song-${item.id}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    style={gridCardStyle}
+                                    onClick={() => openSong(item.id)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            openSong(item.id);
+                                        }
+                                    }}>
+                                    <div style={{ fontWeight: 700 }}>{item.name}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {bandFeaturing.length > 0 && (
+                            <>
+                                <div className="section-header">Also featured in:</div>
+                                <div style={gridContainerStyle}>
+                                    {bandFeaturing.map((item) => (
+                                        <div
+                                            key={`ft-${item.id}`}
+                                            role="button"
+                                            tabIndex={0}
+                                            style={gridCardStyle}
+                                            onClick={() => openSong(item.id)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    openSong(item.id);
+                                                }
+                                            }}>
+                                            <div style={{ fontWeight: 700 }}>{item.name}</div>
+                                            {item.ft_band_name && (
+                                                <div
+                                                    style={{
+                                                        fontSize: '0.88rem',
+                                                        color: 'var(--text-secondary)',
+                                                        marginTop: 4,
+                                                    }}>
+                                                    {item.ft_band_name}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    <>
+                        {bandSongs.map((item) => (
                             <SongItem
-                                key={`ft-${item.id}`}
+                                key={`song-${item.id}`}
                                 id={item.id}
                                 name={item.name}
-                                band_name={bandName}
-                                ft_band_name={item.ft_band_name}
+                                band_name=""
+                                ft_band_name=""
                                 onNavigate={onNavigate}
                                 originStr={bandName}
                             />
                         ))}
+
+                        {bandFeaturing.length > 0 && (
+                            <>
+                                <div className="section-header">Also featured in:</div>
+                                {bandFeaturing.map((item) => (
+                                    <SongItem
+                                        key={`ft-${item.id}`}
+                                        id={item.id}
+                                        name={item.name}
+                                        band_name={bandName}
+                                        ft_band_name={item.ft_band_name}
+                                        onNavigate={onNavigate}
+                                        originStr={bandName}
+                                    />
+                                ))}
+                            </>
+                        )}
                     </>
                 )}
             </main>

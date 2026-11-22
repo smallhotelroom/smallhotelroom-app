@@ -1,9 +1,16 @@
 /**
  * @file src/screens/PlaylistScreen.jsx
- * @version 2.7.1
+ * @version 2.8.0
  */
-import React, { useContext, useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, MoreVertical, Search } from 'lucide-react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import {
+    ArrowLeft,
+    ArrowRight,
+    LayoutGrid,
+    List,
+    MoreVertical,
+    Search,
+} from 'lucide-react';
 import VirtualList from '../components/VirtualList';
 import SongItem from '../components/SongItem';
 import SearchBar from '../components/SearchBar';
@@ -11,11 +18,18 @@ import executeQuery from '../shared/database';
 import { buildMultiTokenSearchClause } from '../shared/dbMerger';
 import { AppContext } from '../shared/AppContext';
 
-export const __version__ = '2.7.1';
+export const __version__ = '2.8.0';
+
+const GRID_PAGE_SIZE = 80;
+const playlistGridScrollCache = new Map();
 
 export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
     const { selectedPlaylistId } = routeParams;
-    const { hideCrawlerTabsEnabled } = useContext(AppContext);
+    const {
+        hideCrawlerTabsEnabled,
+        listViewMode = 'list',
+        toggleListViewMode,
+    } = useContext(AppContext);
 
     const [playlistModalVisible, setPlaylistModalVisible] = useState(false);
     const [playlistName, setPlaylistName] = useState('');
@@ -26,9 +40,21 @@ export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
     const [playlistSearchStr, setPlaylistSearchStr] = useState('');
     const [searchInLyrics, setSearchInLyrics] = useState(false);
 
-    const scrollKey = `playlist|${selectedPlaylistId}|${playlistOrderStr}|${playlistSearchStr}|${searchInLyrics}|${hideCrawlerTabsEnabled}`;
+    const isGridView = listViewMode === 'grid';
+    const scrollKey = `playlist|${selectedPlaylistId}|${listViewMode}|${playlistOrderStr}|${playlistSearchStr}|${searchInLyrics}|${hideCrawlerTabsEnabled}`;
+
+    const [visibleGridCount, setVisibleGridCount] = useState(() => {
+        const saved = playlistGridScrollCache.get(scrollKey);
+        return saved ? Math.max(GRID_PAGE_SIZE, saved.visibleCount) : GRID_PAGE_SIZE;
+    });
+    const gridScrollRef = useRef(null);
 
     useEffect(() => {
+        const saved = playlistGridScrollCache.get(scrollKey);
+        setVisibleGridCount(
+            saved ? Math.max(GRID_PAGE_SIZE, saved.visibleCount) : GRID_PAGE_SIZE
+        );
+
         executeQuery('SELECT name FROM playlists WHERE id = ?;', [selectedPlaylistId])
             .then((data) => {
                 if (data.rows.length > 0) {
@@ -53,7 +79,73 @@ export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
                 setPlaylistSongs(data.rows._array);
             })
             .catch((err) => console.error(err));
-    }, [selectedPlaylistId, playlistOrderStr, playlistSearchStr, searchInLyrics, hideCrawlerTabsEnabled]);
+    }, [selectedPlaylistId, playlistOrderStr, playlistSearchStr, searchInLyrics, hideCrawlerTabsEnabled, scrollKey]);
+
+    useEffect(() => {
+        if (!isGridView || !gridScrollRef.current || playlistSongs.length === 0) {
+            return;
+        }
+        const saved = playlistGridScrollCache.get(scrollKey);
+        const targetTop = saved ? saved.scrollTop : 0;
+        const rafId = requestAnimationFrame(() => {
+            if (gridScrollRef.current) {
+                gridScrollRef.current.scrollTop = targetTop;
+            }
+        });
+        return () => cancelAnimationFrame(rafId);
+    }, [isGridView, playlistSongs, scrollKey]);
+
+    const handleGridScroll = (e) => {
+        const el = e.currentTarget;
+        let nextVisible = visibleGridCount;
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) {
+            if (visibleGridCount < playlistSongs.length) {
+                nextVisible = Math.min(playlistSongs.length, visibleGridCount + GRID_PAGE_SIZE);
+                setVisibleGridCount(nextVisible);
+            }
+        }
+        if (playlistSongs.length > 0) {
+            playlistGridScrollCache.set(scrollKey, {
+                scrollTop: el.scrollTop,
+                visibleCount: nextVisible,
+            });
+        }
+    };
+
+    const gridContainerStyle = {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
+        gap: 10,
+        padding: 12,
+        alignContent: 'start',
+    };
+
+    const gridCardStyle = {
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        minHeight: 76,
+        padding: '14px 12px',
+        borderRadius: 10,
+        border: '1px solid var(--border-color)',
+        background: 'var(--bg-surface)',
+        color: 'var(--text-primary)',
+        fontSize: '1.05rem',
+        lineHeight: 1.3,
+        cursor: 'pointer',
+        wordBreak: 'break-word',
+        boxSizing: 'border-box',
+    };
+
+    const openSong = (item) => {
+        onNavigate({
+            screen: 'Song',
+            params: {
+                selectedSongId: item.id,
+                originStr: playlistName,
+            },
+        });
+    };
 
     return (
         <>
@@ -67,10 +159,22 @@ export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
                 <div className="header-actions">
                     <button
                         className="icon-btn"
+                        title="Search"
                         onClick={() => setPlaylistSearchVisible(!playlistSearchVisible)}>
                         <Search size={22} />
                     </button>
-                    <button className="icon-btn" onClick={() => setPlaylistModalVisible(true)}>
+                    <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Switch to ${isGridView ? 'list' : 'grid'} view`}
+                        title={`Switch to ${isGridView ? 'list' : 'grid'} view`}
+                        onClick={toggleListViewMode}>
+                        {isGridView ? <LayoutGrid size={20} /> : <List size={20} />}
+                    </button>
+                    <button
+                        className="icon-btn"
+                        title="Sort Options"
+                        onClick={() => setPlaylistModalVisible(true)}>
                         <MoreVertical size={22} />
                     </button>
                 </div>
@@ -92,21 +196,57 @@ export default function PlaylistScreen({ routeParams, onNavigate, onBack }) {
                 />
             )}
 
-            <VirtualList
-                items={playlistSongs}
-                itemHeight={68}
-                scrollKey={scrollKey}
-                renderItem={(item) => (
-                    <SongItem
-                        id={item.id}
-                        name={item.name}
-                        band_name={item.band_name}
-                        ft_band_name=""
-                        onNavigate={onNavigate}
-                        originStr={playlistName}
-                    />
-                )}
-            />
+            {isGridView ? (
+                <main
+                    ref={gridScrollRef}
+                    className="content-scroll"
+                    onScroll={handleGridScroll}>
+                    <div style={gridContainerStyle}>
+                        {playlistSongs.slice(0, visibleGridCount).map((item) => (
+                            <div
+                                key={item.id}
+                                role="button"
+                                tabIndex={0}
+                                style={gridCardStyle}
+                                onClick={() => openSong(item)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        openSong(item);
+                                    }
+                                }}>
+                                <div style={{ fontWeight: 700 }}>{item.name}</div>
+                                {item.band_name && (
+                                    <div
+                                        style={{
+                                            fontSize: '0.88rem',
+                                            color: 'var(--text-secondary)',
+                                            marginTop: 4,
+                                        }}>
+                                        {item.band_name}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </main>
+            ) : (
+                <VirtualList
+                    items={playlistSongs}
+                    itemHeight={68}
+                    scrollKey={scrollKey}
+                    renderItem={(item) => (
+                        <SongItem
+                            id={item.id}
+                            name={item.name}
+                            band_name={item.band_name}
+                            ft_band_name=""
+                            onNavigate={onNavigate}
+                            originStr={playlistName}
+                        />
+                    )}
+                />
+            )}
 
             {playlistModalVisible && (
                 <div className="modal-backdrop" onClick={() => setPlaylistModalVisible(false)}>

@@ -1,6 +1,6 @@
 /**
  * @file src/shared/AppContext.jsx
- * @version 3.5.1
+ * @version 3.6.0
  */
 import React, { createContext, useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -9,7 +9,7 @@ import { parseShrConfigYaml } from './shrConfig';
 import rawConfigYaml from '../../shr-config.yaml?raw';
 import { COLOR_THEMES } from './songSchema.js';
 
-export const __version__ = '3.5.1';
+export const __version__ = '3.6.0';
 
 export const SHR_CONFIG = parseShrConfigYaml(rawConfigYaml);
 export const APP_DEFAULTS = SHR_CONFIG.app;
@@ -28,6 +28,7 @@ const HIDE_CRAWLER_TABS_STORAGE_KEY = 'shr_hide_crawler_tabs';
 const CHORD_DIAGRAMS_STORAGE_KEY = 'shr_chord_diagrams';
 const CHORD_INSTRUMENT_STORAGE_KEY = 'shr_chord_instrument';
 const DEFAULT_FONT_SIZE_STORAGE_KEY = 'shr_default_font_size';
+const LIST_VIEW_MODE_STORAGE_KEY = 'shr_list_view_mode';
 
 export function AppProvider({ children }) {
     // 0) Color Theme ('basic' = Basic default, 'shr' = Small Hotel Room)
@@ -47,6 +48,35 @@ export function AppProvider({ children }) {
         if (typeof localStorage !== 'undefined') {
             localStorage.setItem(COLOR_THEME_STORAGE_KEY, valid);
         }
+    };
+
+    // Global List / Grid View Mode ('list' | 'grid')
+    const [listViewMode, setListViewModeState] = useState(() => {
+        if (typeof localStorage !== 'undefined') {
+            const saved = localStorage.getItem(LIST_VIEW_MODE_STORAGE_KEY);
+            if (saved === 'grid' || saved === 'list') {
+                return saved;
+            }
+        }
+        return 'list';
+    });
+
+    const setListViewMode = (nextMode) => {
+        const valid = nextMode === 'grid' ? 'grid' : 'list';
+        setListViewModeState(valid);
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(LIST_VIEW_MODE_STORAGE_KEY, valid);
+        }
+    };
+
+    const toggleListViewMode = () => {
+        setListViewModeState((prev) => {
+            const next = prev === 'grid' ? 'list' : 'grid';
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(LIST_VIEW_MODE_STORAGE_KEY, next);
+            }
+            return next;
+        });
     };
 
     // 1) Compensate Capo / Drop (Default: false)
@@ -275,6 +305,9 @@ export function AppProvider({ children }) {
             value={{
                 colorTheme,
                 setColorTheme,
+                listViewMode,
+                setListViewMode,
+                toggleListViewMode,
                 compensateCapo,
                 setCompensateCapo,
                 fakeUkeEnabled,
