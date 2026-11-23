@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.smallhotelroom.app",
+      "sha256_cert_fingerprints": [
+        "66:2E:0A:E3:31:C7:CC:03:E4:D3:58:63:B3:3F:55:E2:39:6A:9C:E3:97:64:20:9E:B6:93:F9:FB:69:1F:DF:65"
+      ]
+    }
+  }
+]
