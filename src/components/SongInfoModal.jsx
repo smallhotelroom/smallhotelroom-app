@@ -1,8 +1,8 @@
 /**
  * @file src/components/SongInfoModal.jsx
- * @version 1.2.2
+ * @version 1.3.0
  * Modal displaying song metadata, minimalist header with theme-aware Share button
- * (sharing canonical app deep links with `?song=...&lang=...`), Spotify / YouTube
+ * (sharing canonical app deep links with `/song/<hash>` and optional `?lang=...`), Spotify / YouTube
  * streaming links (via react-icons/fa), BPM metronome trigger, deduced key, custom tuning,
  * interactive language translation switcher (e.g. "Lang: English / Español"), and featuring band links.
  */
@@ -13,7 +13,7 @@ import { transposeChordToken } from '../shared/chordTransposer.js';
 import { MetronomeIcon } from '../screens/HomeScreen';
 import { setMetronomeBpm, setMetronomePlaying } from '../shared/audioEngine';
 
-export const __version__ = '1.2.2';
+export const __version__ = '1.3.0';
 
 const DEFAULT_APP_SHARE_ORIGIN = 'https://app.smallhotelroom.com';
 
@@ -32,22 +32,20 @@ function resolveYouTubeUrl(raw) {
 }
 
 function buildSongDeepLink(songData, activeTranslationLang = null) {
-    const baseUrl =
-        typeof window !== 'undefined' && window.location.protocol.startsWith('http')
-            ? `${window.location.origin}${window.location.pathname}`
-            : `${DEFAULT_APP_SHARE_ORIGIN}/`;
-
     const songKey = songData.content_hash || songData.id;
-    const params = new URLSearchParams();
-    if (songKey !== undefined && songKey !== null && String(songKey).trim() !== '') {
-        params.set('song', String(songKey));
-    }
+    const hasSongKey =
+        songKey !== undefined && songKey !== null && String(songKey).trim() !== '';
+    const baseUrl = hasSongKey
+        ? `${DEFAULT_APP_SHARE_ORIGIN}/song/${encodeURIComponent(String(songKey))}`
+        : `${DEFAULT_APP_SHARE_ORIGIN}/`;
+
     if (activeTranslationLang) {
+        const params = new URLSearchParams();
         params.set('lang', activeTranslationLang);
+        return `${baseUrl}?${params.toString()}`;
     }
 
-    const qs = params.toString();
-    return qs ? `${baseUrl}?${qs}` : baseUrl;
+    return baseUrl;
 }
 
 /**

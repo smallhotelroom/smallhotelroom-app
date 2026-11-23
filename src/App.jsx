@@ -1,6 +1,6 @@
 /**
  * @file src/App.jsx
- * @version 2.6.0
+ * @version 2.7.1
  */
 import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
@@ -15,7 +15,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import TunerScreen from './screens/TunerScreen';
 import MetronomeScreen from './screens/MetronomeScreen';
 
-export const __version__ = '2.6.0';
+export const __version__ = '2.7.1';
 
 const SCREEN_TO_PATH = {
     Home: '/',
@@ -34,6 +34,12 @@ function normalizePath(pathname) {
     if (!pathname) return '/';
     const cleaned = pathname.toLowerCase().replace(/\/+$/, '');
     return cleaned || '/';
+}
+
+function extractSongParamFromPath(pathname) {
+    if (!pathname) return null;
+    const match = pathname.match(/^\/song\/([^/?#]+)\/?$/i);
+    return match ? decodeURIComponent(match[1]) : null;
 }
 
 function getInitialNavStack() {
@@ -94,7 +100,7 @@ function AppShell() {
         if (!rawUrl) return;
         try {
             const parsed = new URL(rawUrl);
-            const songParam = parsed.searchParams.get('song');
+            const songParam = extractSongParamFromPath(parsed.pathname);
             const langParam = parsed.searchParams.get('lang');
 
             if (songParam) {
@@ -137,12 +143,16 @@ function AppShell() {
         }
     }, []);
 
-    // Browser Back / Forward support for showcase routes
+    // Browser Back / Forward support for showcase and song routes
     useEffect(() => {
         if (typeof window === 'undefined' || Capacitor.isNativePlatform()) {
             return;
         }
         const handlePopState = () => {
+            if (extractSongParamFromPath(window.location.pathname)) {
+                openIncomingUrl(window.location.href);
+                return;
+            }
             const screen = PATH_TO_SCREEN[normalizePath(window.location.pathname)];
             if (screen) {
                 setNavStack([
@@ -155,19 +165,14 @@ function AppShell() {
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
-    }, []);
+    }, [openIncomingUrl]);
 
-    // Web deep-link support: `?song=<content_hash|id>&lang=<lang>`
+    // Web deep-link support: `/song/<content_hash|id>` (with optional `?lang=<lang>`)
     useEffect(() => {
-        if (
-            typeof window === 'undefined' ||
-            Capacitor.isNativePlatform() ||
-            !window.location?.search
-        ) {
+        if (typeof window === 'undefined' || Capacitor.isNativePlatform()) {
             return;
         }
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('song')) {
+        if (extractSongParamFromPath(window.location.pathname)) {
             openIncomingUrl(window.location.href);
         }
     }, [openIncomingUrl]);
