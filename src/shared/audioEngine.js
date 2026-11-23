@@ -1,6 +1,6 @@
 /**
  * @file src/shared/audioEngine.js
- * @version 2.11.1
+ * @version 2.11.2
  * Web Audio API synthesis engine for Small Hotel Room:
  * - Tuner reference definitions (`GUITAR_STRINGS`, `UKULELE_STRINGS`, `BASS_STRINGS`,
  *   `VIOLIN_STRINGS`, `SAX_WINDS_NOTES`, `getGuitarStrings`, `getBassStrings`,
@@ -8,13 +8,13 @@
  * - Polyphonic guitar/ukulele chord strumming (quantized to Track A count 1 when metronome is active)
  * - Multi-track Polyrhythm Metronome scheduler:
  *   - Track A defines the master beat cycle ("A follows BPM": each step on A = 1 beat at master BPM)
- *   - Beat 1 of Track A is 3-state: 0 = Off, 1 = Normal, 2 = Accent ('high' downbeat click)
+ *   - Beat 1 of Track A is 3-state: 0 = Off, 1 = Normal, 2 = Accent (paired voice that shifts with track voice)
  *   - All other steps are 2-state: 0 = Off, 1 = Normal (track voice)
  *   - Supports up to 12 tracks (A..L) and up to 32 steps per track
  */
 import { APP_DEFAULTS } from './AppContext';
 
-export const __version__ = '2.11.1';
+export const __version__ = '2.11.2';
 
 let audioCtx = null;
 
@@ -177,6 +177,17 @@ export function buildChromaticNotes(startOctave = 4, octaveCount = 1) {
 export const MAX_METRONOME_TRACKS = 12;
 export const MAX_METRONOME_STEPS = 32;
 const VOICE_ORDER = ['mid', 'low', 'sub', 'high'];
+
+/**
+ * Returns the paired accent voice for a given track voice so the accented beat
+ * shifts alongside the track voice and never overlaps with normal beats:
+ * mid -> high, low -> mid, sub -> low, high -> sub.
+ */
+export function getAccentVoiceForTrack(trackVoice = 'mid') {
+    const idx = VOICE_ORDER.indexOf(trackVoice);
+    const safeIdx = idx >= 0 ? idx : 0;
+    return VOICE_ORDER[(safeIdx - 1 + VOICE_ORDER.length) % VOICE_ORDER.length];
+}
 
 /**
  * Builds the roll pattern for the Beat Subdivision buttons:
@@ -481,10 +492,12 @@ function runSchedulerTick() {
             const stepLevel = Number(track.steps[stepIndex]) || 0;
 
             if (stepLevel > 0) {
+                const baseVoice =
+                    track.voice || VOICE_ORDER[tIdx % VOICE_ORDER.length];
                 const voiceToPlay =
                     stepLevel === 2
-                        ? 'high'
-                        : track.voice || VOICE_ORDER[tIdx % VOICE_ORDER.length];
+                        ? getAccentVoiceForTrack(baseVoice)
+                        : baseVoice;
                 scheduleMetronomeClickAt(
                     ctx,
                     stepTime,

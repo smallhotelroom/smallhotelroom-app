@@ -1,19 +1,20 @@
 /**
  * @file src/components/MetronomeRollEditor.jsx
- * @version 2.4.0
+ * @version 2.4.1
  * Multi-View Polyrhythm Roll Editor for the SHR Metronome:
  * - Top Control Bar: [ Circular | Landscape | Portrait ] view selector (defaults to Circular) + [ - Line | + Line ]
- * - 3-state steps per dot: 0 = Off (hollow), 1 = Normal (track color), 2 = Accent (accent color + crisp ring)
+ * - 3-state beat 1 on Track A: 0 = Off (hollow), 1 = Normal (track color), 2 = Accent (paired voice color + crisp ring)
  * - Smart Auto-Switch between Landscape and Portrait when cell dimensions get too small.
  */
 import React, { useContext, useState } from 'react';
 import { AppContext } from '../shared/AppContext';
 import {
+    getAccentVoiceForTrack,
     MAX_METRONOME_STEPS,
     MAX_METRONOME_TRACKS,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.4.0';
+export const __version__ = '2.4.1';
 
 const VIEW_MODE_STORAGE_KEY = 'shr_metronome_view_mode';
 const LANDSCAPE_MAX_COMFORTABLE_STEPS = 16;
@@ -278,6 +279,11 @@ export default function MetronomeRollEditor({
 
                     {tracks.map((track, trackIdx) => {
                         const palette = getTrackPalette(track, trackIdx, colorTheme);
+                        const accentPalette = getTrackPalette(
+                            { voice: getAccentVoiceForTrack(track.voice || 'mid') },
+                            trackIdx,
+                            colorTheme
+                        );
                         const r = outerRadius - trackIdx * ringStep;
                         const numSteps = Math.max(1, track.steps.length);
                         const activeStepIdx = isPlaying
@@ -346,7 +352,7 @@ export default function MetronomeRollEditor({
                                         y2={playheadCoord.y}
                                         stroke={
                                             playheadCoord.stepLevel === 2
-                                                ? 'var(--accent-color)'
+                                                ? accentPalette.dot
                                                 : palette.dot
                                         }
                                         strokeWidth="1.5"
@@ -364,10 +370,10 @@ export default function MetronomeRollEditor({
                                         ? nodeRadius * 1.14
                                         : nodeRadius;
                                     const dotColor = isAccent
-                                        ? 'var(--accent-color)'
+                                        ? accentPalette.dot
                                         : palette.dot;
                                     const borderColor = isAccent
-                                        ? 'var(--accent-color)'
+                                        ? accentPalette.activeBorder
                                         : palette.activeBorder;
 
                                     return (
@@ -390,7 +396,7 @@ export default function MetronomeRollEditor({
                                                     cy={y}
                                                     r={baseR + 2.6}
                                                     fill="none"
-                                                    stroke="var(--accent-color)"
+                                                    stroke={accentPalette.activeBorder}
                                                     strokeWidth="1.25"
                                                     opacity="0.55"
                                                 />
@@ -521,6 +527,11 @@ export default function MetronomeRollEditor({
             }}>
             {tracks.map((track, trackIdx) => {
                 const palette = getTrackPalette(track, trackIdx, colorTheme);
+                const accentPalette = getTrackPalette(
+                    { voice: getAccentVoiceForTrack(track.voice || 'mid') },
+                    trackIdx,
+                    colorTheme
+                );
                 const activeStepIdx = isPlaying
                     ? (currentStepByTrack[trackIdx] ?? -1)
                     : -1;
@@ -594,7 +605,7 @@ export default function MetronomeRollEditor({
                                     <button
                                         key={stepIdx}
                                         type="button"
-                                        title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps} (tap: Off → Normal → Accent)`}
+                                        title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps}`}
                                         onClick={() =>
                                             onToggleStep &&
                                             onToggleStep(trackIdx, stepIdx)
@@ -608,7 +619,7 @@ export default function MetronomeRollEditor({
                                             border: `1px solid ${
                                                 isPlayheadHere
                                                     ? isAccent
-                                                        ? 'var(--accent-color)'
+                                                        ? accentPalette.activeBorder
                                                         : palette.activeBorder
                                                     : 'var(--border-color)'
                                             }`,
@@ -626,12 +637,12 @@ export default function MetronomeRollEditor({
                                                 height: dotSize,
                                                 borderRadius: '50%',
                                                 background: isAccent
-                                                    ? 'var(--accent-color)'
+                                                    ? accentPalette.dot
                                                     : hasDot
                                                       ? palette.dot
                                                       : 'var(--border-color)',
                                                 boxShadow: isAccent
-                                                    ? '0 0 0 1.5px var(--bg-surface), 0 0 0 3px var(--accent-color)'
+                                                    ? `0 0 0 1.5px var(--bg-surface), 0 0 0 3px ${accentPalette.activeBorder}`
                                                     : 'none',
                                                 opacity: hasDot ? 1 : 0.32,
                                                 transform:
@@ -684,6 +695,11 @@ export default function MetronomeRollEditor({
                 }}>
                 {tracks.map((track, trackIdx) => {
                     const palette = getTrackPalette(track, trackIdx, colorTheme);
+                    const accentPalette = getTrackPalette(
+                        { voice: getAccentVoiceForTrack(track.voice || 'mid') },
+                        trackIdx,
+                        colorTheme
+                    );
                     const activeStepIdx = isPlaying
                         ? (currentStepByTrack[trackIdx] ?? -1)
                         : -1;
@@ -763,7 +779,7 @@ export default function MetronomeRollEditor({
                                         <button
                                             key={stepIdx}
                                             type="button"
-                                            title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps} (tap: Off → Normal → Accent)`}
+                                            title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps}`}
                                             onClick={() =>
                                                 onToggleStep &&
                                                 onToggleStep(trackIdx, stepIdx)
@@ -780,7 +796,7 @@ export default function MetronomeRollEditor({
                                                 border: `1px solid ${
                                                     isPlayheadHere
                                                         ? isAccent
-                                                            ? 'var(--accent-color)'
+                                                            ? accentPalette.activeBorder
                                                             : palette.activeBorder
                                                         : 'var(--border-color)'
                                                 }`,
@@ -798,12 +814,12 @@ export default function MetronomeRollEditor({
                                                     height: dotSize,
                                                     borderRadius: '50%',
                                                     background: isAccent
-                                                        ? 'var(--accent-color)'
+                                                        ? accentPalette.dot
                                                         : hasDot
                                                           ? palette.dot
                                                           : 'var(--border-color)',
                                                     boxShadow: isAccent
-                                                        ? '0 0 0 1.5px var(--bg-surface), 0 0 0 3px var(--accent-color)'
+                                                        ? `0 0 0 1.5px var(--bg-surface), 0 0 0 3px ${accentPalette.activeBorder}`
                                                         : 'none',
                                                     opacity: hasDot ? 1 : 0.32,
                                                     transform:
