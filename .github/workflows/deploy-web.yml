@@ -1,5 +1,5 @@
 # File: .github/workflows/deploy-web.yml
-# Version: 1.0.0
+# Version: 1.0.1
 # Builds the official song database and Vite web bundle, then deploys to GitHub Pages
 # (https://app.smallhotelroom.com) on pushes to main or manual dispatch.
 
@@ -58,6 +58,7 @@ jobs:
           npm ci
           npm run db:build
           npm run build
+          cp dist/index.html dist/404.html
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
