@@ -1,19 +1,23 @@
 /**
  * @file src/components/SongInfoModal.jsx
- * @version 1.3.0
+ * @version 1.4.0
  * Modal displaying song metadata, minimalist header with theme-aware Share button
- * (sharing canonical app deep links with `/song/<hash>` and optional `?lang=...`), Spotify / YouTube
- * streaming links (via react-icons/fa), BPM metronome trigger, deduced key, custom tuning,
- * interactive language translation switcher (e.g. "Lang: English / Español"), and featuring band links.
+ * (sharing canonical app deep links with `/song/<hash>` and optional `?lang=...`
+ * via native Android Share Sheet on Capacitor or Web Share / clipboard on web),
+ * Spotify / YouTube streaming links (via react-icons/fa), BPM metronome trigger,
+ * deduced key, custom tuning, interactive language translation switcher
+ * (e.g. "Lang: English / Español"), and featuring band links.
  */
 import React, { useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import { Check, Share2, X } from 'lucide-react';
 import { FaSpotify, FaYoutube } from 'react-icons/fa';
 import { transposeChordToken } from '../shared/chordTransposer.js';
 import { MetronomeIcon } from '../screens/HomeScreen';
 import { setMetronomeBpm, setMetronomePlaying } from '../shared/audioEngine';
 
-export const __version__ = '1.3.0';
+export const __version__ = '1.4.0';
 
 const DEFAULT_APP_SHARE_ORIGIN = 'https://app.smallhotelroom.com';
 
@@ -101,6 +105,20 @@ export default function SongInfoModal({
     const handleShare = async () => {
         const shareTitle = bandName ? `${songData.name} - ${bandName}` : songData.name;
         const shareUrl = buildSongDeepLink(songData, activeTranslationLang);
+
+        if (Capacitor.isNativePlatform()) {
+            try {
+                await Share.share({
+                    title: shareTitle,
+                    text: `Check out the chords and lyrics for ${songData.name}`,
+                    url: shareUrl,
+                    dialogTitle: `Share ${songData.name}`,
+                });
+                return;
+            } catch {
+                // User cancelled or native share unavailable; fall through to clipboard
+            }
+        }
 
         if (typeof navigator !== 'undefined' && navigator.share) {
             try {
