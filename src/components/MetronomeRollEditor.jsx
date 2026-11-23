@@ -1,10 +1,9 @@
 /**
  * @file src/components/MetronomeRollEditor.jsx
- * @version 2.3.2
+ * @version 2.4.0
  * Multi-View Polyrhythm Roll Editor for the SHR Metronome:
  * - Top Control Bar: [ Circular | Landscape | Portrait ] view selector (defaults to Circular) + [ - Line | + Line ]
- * - Theme-aware Track Palettes: Track A ('high') follows `--accent-color`, Track B ('mid') uses the complementary
- *   Blue/Green, and Track D+ ('sub') uses warm Brown in Small Hotel Room mode vs Purple in Basic mode.
+ * - 3-state steps per dot: 0 = Off (hollow), 1 = Normal (track color), 2 = Accent (accent color + crisp ring)
  * - Smart Auto-Switch between Landscape and Portrait when cell dimensions get too small.
  */
 import React, { useContext, useState } from 'react';
@@ -14,7 +13,7 @@ import {
     MAX_METRONOME_TRACKS,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.3.2';
+export const __version__ = '2.4.0';
 
 const VIEW_MODE_STORAGE_KEY = 'shr_metronome_view_mode';
 const LANDSCAPE_MAX_COMFORTABLE_STEPS = 16;
@@ -25,7 +24,7 @@ function getTrackPalette(track, trackIdx, colorTheme = 'basic') {
     const isShr = colorTheme === 'shr';
     const palettes = {
         high: {
-            name: 'High pitch (Downbeat)',
+            name: 'High pitch (Accent)',
             dot: 'var(--accent-color)',
             activeBg: 'rgba(var(--accent-rgb, 37, 99, 235), 0.25)',
             activeBorder: 'var(--accent-color)',
@@ -79,7 +78,7 @@ function getTrackPalette(track, trackIdx, colorTheme = 'basic') {
     if (track?.voice && palettes[track.voice]) {
         return palettes[track.voice];
     }
-    const keys = ['high', 'mid', 'low', 'sub'];
+    const keys = ['mid', 'low', 'sub', 'high'];
     return palettes[keys[trackIdx % keys.length]];
 }
 
@@ -295,16 +294,17 @@ export default function MetronomeRollEditor({
                                     : 7.5;
 
                         const activeCoords = [];
-                        const stepCoords = track.steps.map((hasDot, stepIdx) => {
+                        const stepCoords = track.steps.map((rawStep, stepIdx) => {
+                            const stepLevel = Number(rawStep) || 0;
                             const angleRad =
                                 (stepIdx / numSteps) * Math.PI * 2 -
                                 Math.PI / 2;
                             const x = cx + r * Math.cos(angleRad);
                             const y = cy + r * Math.sin(angleRad);
-                            if (hasDot) {
+                            if (stepLevel > 0) {
                                 activeCoords.push(`${x.toFixed(1)},${y.toFixed(1)}`);
                             }
-                            return { x, y, hasDot, stepIdx, angleRad };
+                            return { x, y, stepLevel, stepIdx, angleRad };
                         });
 
                         const playheadCoord =
@@ -344,16 +344,32 @@ export default function MetronomeRollEditor({
                                         y1={cy}
                                         x2={playheadCoord.x}
                                         y2={playheadCoord.y}
-                                        stroke={palette.dot}
+                                        stroke={
+                                            playheadCoord.stepLevel === 2
+                                                ? 'var(--accent-color)'
+                                                : palette.dot
+                                        }
                                         strokeWidth="1.5"
                                         strokeOpacity="0.45"
                                         style={{ pointerEvents: 'none' }}
                                     />
                                 )}
 
-                                {stepCoords.map(({ x, y, hasDot, stepIdx }) => {
+                                {stepCoords.map(({ x, y, stepLevel, stepIdx }) => {
+                                    const hasDot = stepLevel > 0;
+                                    const isAccent = stepLevel === 2;
                                     const isPlayheadHere =
                                         activeStepIdx === stepIdx;
+                                    const baseR = isAccent
+                                        ? nodeRadius * 1.14
+                                        : nodeRadius;
+                                    const dotColor = isAccent
+                                        ? 'var(--accent-color)'
+                                        : palette.dot;
+                                    const borderColor = isAccent
+                                        ? 'var(--accent-color)'
+                                        : palette.activeBorder;
+
                                     return (
                                         <g
                                             key={stepIdx}
@@ -368,13 +384,24 @@ export default function MetronomeRollEditor({
                                                 r={Math.max(10, nodeRadius + 3)}
                                                 fill="transparent"
                                             />
+                                            {isAccent && !isPlayheadHere && (
+                                                <circle
+                                                    cx={x}
+                                                    cy={y}
+                                                    r={baseR + 2.6}
+                                                    fill="none"
+                                                    stroke="var(--accent-color)"
+                                                    strokeWidth="1.25"
+                                                    opacity="0.55"
+                                                />
+                                            )}
                                             {isPlayheadHere && (
                                                 <circle
                                                     cx={x}
                                                     cy={y}
-                                                    r={nodeRadius + 3.5}
+                                                    r={baseR + 3.5}
                                                     fill="none"
-                                                    stroke={palette.activeBorder}
+                                                    stroke={borderColor}
                                                     strokeWidth="2"
                                                 />
                                             )}
@@ -383,17 +410,17 @@ export default function MetronomeRollEditor({
                                                 cy={y}
                                                 r={
                                                     isPlayheadHere
-                                                        ? nodeRadius * 1.18
-                                                        : nodeRadius
+                                                        ? baseR * 1.15
+                                                        : baseR
                                                 }
                                                 fill={
                                                     hasDot
-                                                        ? palette.dot
+                                                        ? dotColor
                                                         : 'var(--bg-surface)'
                                                 }
                                                 stroke={
                                                     hasDot
-                                                        ? palette.activeBorder
+                                                        ? borderColor
                                                         : 'var(--border-color)'
                                                 }
                                                 strokeWidth="1.5"
@@ -543,19 +570,31 @@ export default function MetronomeRollEditor({
                                         ? numSteps * 18
                                         : 0,
                             }}>
-                            {track.steps.map((hasDot, stepIdx) => {
+                            {track.steps.map((rawStep, stepIdx) => {
+                                const stepLevel = Number(rawStep) || 0;
+                                const hasDot = stepLevel > 0;
+                                const isAccent = stepLevel === 2;
                                 const isPlayheadHere = activeStepIdx === stepIdx;
                                 const isBeatBoundary =
                                     numSteps > masterBeats &&
                                     numSteps % masterBeats === 0 &&
                                     stepIdx > 0 &&
                                     stepIdx % (numSteps / masterBeats) === 0;
+                                const baseDotSize =
+                                    numSteps >= 20
+                                        ? 4.5
+                                        : numSteps >= 12
+                                          ? 5.5
+                                          : 7.5;
+                                const dotSize = isAccent
+                                    ? baseDotSize + 1.5
+                                    : baseDotSize;
 
                                 return (
                                     <button
                                         key={stepIdx}
                                         type="button"
-                                        title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps}`}
+                                        title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps} (tap: Off → Normal → Accent)`}
                                         onClick={() =>
                                             onToggleStep &&
                                             onToggleStep(trackIdx, stepIdx)
@@ -568,7 +607,9 @@ export default function MetronomeRollEditor({
                                             borderRadius: 4,
                                             border: `1px solid ${
                                                 isPlayheadHere
-                                                    ? palette.activeBorder
+                                                    ? isAccent
+                                                        ? 'var(--accent-color)'
+                                                        : palette.activeBorder
                                                     : 'var(--border-color)'
                                             }`,
                                             background: isPlayheadHere
@@ -581,26 +622,21 @@ export default function MetronomeRollEditor({
                                         }}>
                                         <span
                                             style={{
-                                                width:
-                                                    numSteps >= 20
-                                                        ? 4.5
-                                                        : numSteps >= 12
-                                                          ? 5.5
-                                                          : 7.5,
-                                                height:
-                                                    numSteps >= 20
-                                                        ? 4.5
-                                                        : numSteps >= 12
-                                                          ? 5.5
-                                                          : 7.5,
+                                                width: dotSize,
+                                                height: dotSize,
                                                 borderRadius: '50%',
-                                                background: hasDot
-                                                    ? palette.dot
-                                                    : 'var(--border-color)',
+                                                background: isAccent
+                                                    ? 'var(--accent-color)'
+                                                    : hasDot
+                                                      ? palette.dot
+                                                      : 'var(--border-color)',
+                                                boxShadow: isAccent
+                                                    ? '0 0 0 1.5px var(--bg-surface), 0 0 0 3px var(--accent-color)'
+                                                    : 'none',
                                                 opacity: hasDot ? 1 : 0.32,
                                                 transform:
                                                     isPlayheadHere && hasDot
-                                                        ? 'scale(1.25)'
+                                                        ? 'scale(1.2)'
                                                         : 'scale(1)',
                                             }}
                                         />
@@ -710,7 +746,10 @@ export default function MetronomeRollEditor({
                                     height: colHeight,
                                     gap: 2.5,
                                 }}>
-                                {track.steps.map((hasDot, stepIdx) => {
+                                {track.steps.map((rawStep, stepIdx) => {
+                                    const stepLevel = Number(rawStep) || 0;
+                                    const hasDot = stepLevel > 0;
+                                    const isAccent = stepLevel === 2;
                                     const isPlayheadHere =
                                         activeStepIdx === stepIdx;
                                     const isBeatBoundary =
@@ -718,12 +757,13 @@ export default function MetronomeRollEditor({
                                         numSteps % masterBeats === 0 &&
                                         stepIdx > 0 &&
                                         stepIdx % (numSteps / masterBeats) === 0;
+                                    const dotSize = isAccent ? 8.5 : 7;
 
                                     return (
                                         <button
                                             key={stepIdx}
                                             type="button"
-                                            title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps}`}
+                                            title={`Track ${track.label}, Step ${stepIdx + 1}/${numSteps} (tap: Off → Normal → Accent)`}
                                             onClick={() =>
                                                 onToggleStep &&
                                                 onToggleStep(trackIdx, stepIdx)
@@ -739,7 +779,9 @@ export default function MetronomeRollEditor({
                                                 borderRadius: 4,
                                                 border: `1px solid ${
                                                     isPlayheadHere
-                                                        ? palette.activeBorder
+                                                        ? isAccent
+                                                            ? 'var(--accent-color)'
+                                                            : palette.activeBorder
                                                         : 'var(--border-color)'
                                                 }`,
                                                 background: isPlayheadHere
@@ -752,16 +794,21 @@ export default function MetronomeRollEditor({
                                             }}>
                                             <span
                                                 style={{
-                                                    width: 7,
-                                                    height: 7,
+                                                    width: dotSize,
+                                                    height: dotSize,
                                                     borderRadius: '50%',
-                                                    background: hasDot
-                                                        ? palette.dot
-                                                        : 'var(--border-color)',
+                                                    background: isAccent
+                                                        ? 'var(--accent-color)'
+                                                        : hasDot
+                                                          ? palette.dot
+                                                          : 'var(--border-color)',
+                                                    boxShadow: isAccent
+                                                        ? '0 0 0 1.5px var(--bg-surface), 0 0 0 3px var(--accent-color)'
+                                                        : 'none',
                                                     opacity: hasDot ? 1 : 0.32,
                                                     transform:
                                                         isPlayheadHere && hasDot
-                                                            ? 'scale(1.25)'
+                                                            ? 'scale(1.2)'
                                                             : 'scale(1)',
                                                 }}
                                             />

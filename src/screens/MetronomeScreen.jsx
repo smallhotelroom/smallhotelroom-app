@@ -1,11 +1,11 @@
 /**
  * @file src/screens/MetronomeScreen.jsx
- * @version 2.2.0
+ * @version 2.3.2
  * Full-screen Metronome with compact 5-row layout and interactive Polyrhythm Roll Editor:
  * 1) Click: Natural/Synth + Keep on exit
  * 2) Master BPMs (- / BPM / + and range slider; double-tap BPM to reset to 120)
  * 3) Start / Stop Metronome
- * 4) Beat subdivision: Quarter (1/4), Eighth (1/8), Triplet (1/3), Sixteenth (1/16)
+ * 4) Beat subdivision: Quarter (1/4), Eighth (1/8), Triplet (1/3), Sixteenth (1/16) with inline note icons
  * 5) Multi-line Polyrhythm Roll Editor (MetronomeRollEditor)
  */
 import React, { useContext, useEffect, useRef, useState } from 'react';
@@ -28,7 +28,130 @@ import {
     toggleMetronomeTrackStep,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.2.0';
+export const __version__ = '2.3.2';
+
+function SubdivisionIcon({ type }) {
+    const commonProps = {
+        height: 14,
+        fill: 'currentColor',
+        stroke: 'currentColor',
+        style: {
+            display: 'inline-block',
+            verticalAlign: 'middle',
+            flexShrink: 0,
+            margin: '-2px 0',
+        },
+        'aria-hidden': 'true',
+    };
+
+    if (type === 1) {
+        // Quarter note (1/4)
+        return (
+            <svg width="13" viewBox="0 0 20 22" {...commonProps}>
+                <ellipse
+                    cx="8.5"
+                    cy="16.5"
+                    rx="3.3"
+                    ry="2.3"
+                    transform="rotate(-20 8.5 16.5)"
+                    stroke="none"
+                />
+                <line x1="11.3" y1="16" x2="11.3" y2="3.5" strokeWidth="1.9" />
+            </svg>
+        );
+    }
+
+    if (type === 2) {
+        // Beamed eighth notes (1/8)
+        return (
+            <svg width="17" viewBox="0 0 26 22" {...commonProps}>
+                <ellipse
+                    cx="6.5"
+                    cy="16.5"
+                    rx="3.1"
+                    ry="2.2"
+                    transform="rotate(-20 6.5 16.5)"
+                    stroke="none"
+                />
+                <ellipse
+                    cx="18.5"
+                    cy="16.5"
+                    rx="3.1"
+                    ry="2.2"
+                    transform="rotate(-20 18.5 16.5)"
+                    stroke="none"
+                />
+                <line x1="9.2" y1="16" x2="9.2" y2="4" strokeWidth="1.8" />
+                <line x1="21.2" y1="16" x2="21.2" y2="4" strokeWidth="1.8" />
+                <line x1="8.4" y1="4.5" x2="22" y2="4.5" strokeWidth="2.8" />
+            </svg>
+        );
+    }
+
+    if (type === 3) {
+        // Beamed triplet (1/3)
+        return (
+            <svg width="20" viewBox="0 0 34 24" {...commonProps}>
+                <text
+                    x="18.2"
+                    y="6.8"
+                    textAnchor="middle"
+                    fontSize="8"
+                    fontWeight="800"
+                    stroke="none">
+                    3
+                </text>
+                {[5.5, 15.5, 25.5].map((cx) => (
+                    <React.Fragment key={cx}>
+                        <ellipse
+                            cx={cx}
+                            cy="19"
+                            rx="2.9"
+                            ry="2.1"
+                            transform={`rotate(-20 ${cx} 19)`}
+                            stroke="none"
+                        />
+                        <line
+                            x1={cx + 2.5}
+                            y1="18.5"
+                            x2={cx + 2.5}
+                            y2="9.2"
+                            strokeWidth="1.7"
+                        />
+                    </React.Fragment>
+                ))}
+                <line x1="7.2" y1="9.6" x2="28.8" y2="9.6" strokeWidth="2.6" />
+            </svg>
+        );
+    }
+
+    // Double-beamed sixteenth notes (1/16)
+    return (
+        <svg width="22" viewBox="0 0 38 22" {...commonProps}>
+            {[5, 13, 21, 29].map((cx) => (
+                <React.Fragment key={cx}>
+                    <ellipse
+                        cx={cx}
+                        cy="16.8"
+                        rx="2.7"
+                        ry="2"
+                        transform={`rotate(-20 ${cx} 16.8)`}
+                        stroke="none"
+                    />
+                    <line
+                        x1={cx + 2.3}
+                        y1="16.3"
+                        x2={cx + 2.3}
+                        y2="4"
+                        strokeWidth="1.6"
+                    />
+                </React.Fragment>
+            ))}
+            <line x1="6.6" y1="4.4" x2="32" y2="4.4" strokeWidth="2.4" />
+            <line x1="6.6" y1="8.1" x2="32" y2="8.1" strokeWidth="2.4" />
+        </svg>
+    );
+}
 
 export default function MetronomeScreen({ onBack }) {
     const { darkMode, setDarkMode } = useContext(AppContext);
@@ -347,8 +470,17 @@ export default function MetronomeScreen({ onBack }) {
                                             lineHeight: 1.2,
                                         }}>
                                         <div>{opt.sub}</div>
-                                        <div style={{ fontSize: '0.7rem', opacity: 0.85 }}>
-                                            ({opt.label})
+                                        <div
+                                            style={{
+                                                fontSize: '0.7rem',
+                                                opacity: 0.85,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 3,
+                                            }}>
+                                            <span>({opt.label})</span>
+                                            <SubdivisionIcon type={opt.val} />
                                         </div>
                                     </button>
                                 );

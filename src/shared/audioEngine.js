@@ -1,6 +1,6 @@
 /**
  * @file src/shared/audioEngine.js
- * @version 2.10.1
+ * @version 2.11.1
  * Web Audio API synthesis engine for Small Hotel Room:
  * - Tuner reference definitions (`GUITAR_STRINGS`, `UKULELE_STRINGS`, `BASS_STRINGS`,
  *   `VIOLIN_STRINGS`, `SAX_WINDS_NOTES`, `getGuitarStrings`, `getBassStrings`,
@@ -8,12 +8,13 @@
  * - Polyphonic guitar/ukulele chord strumming (quantized to Track A count 1 when metronome is active)
  * - Multi-track Polyrhythm Metronome scheduler:
  *   - Track A defines the master beat cycle ("A follows BPM": each step on A = 1 beat at master BPM)
+ *   - Beat 1 of Track A is 3-state: 0 = Off, 1 = Normal, 2 = Accent ('high' downbeat click)
+ *   - All other steps are 2-state: 0 = Off, 1 = Normal (track voice)
  *   - Supports up to 12 tracks (A..L) and up to 32 steps per track
- *   - 4 distinct click voices: 'high' (A), 'mid' (B), 'low' (C), 'sub' (D+)
  */
 import { APP_DEFAULTS } from './AppContext';
 
-export const __version__ = '2.10.1';
+export const __version__ = '2.11.1';
 
 let audioCtx = null;
 
@@ -175,13 +176,12 @@ export function buildChromaticNotes(startOctave = 4, octaveCount = 1) {
 
 export const MAX_METRONOME_TRACKS = 12;
 export const MAX_METRONOME_STEPS = 32;
-const VOICE_ORDER = ['high', 'mid', 'low', 'sub'];
+const VOICE_ORDER = ['mid', 'low', 'sub', 'high'];
 
 /**
- * Builds the multi-track roll pattern for the Beat Subdivision buttons:
- * - Track A (4 steps, 'high'): `+---` (Beat 1 Downbeat Accent)
- * - Track B (4 steps, 'mid'):  `-+++` (Beats 2, 3, 4 Quarter Pulse)
- * - Track C (4*sub steps, 'low', when sub > 1): complementary off-beat subdivisions
+ * Builds the roll pattern for the Beat Subdivision buttons:
+ * - Track A (4 steps, 'mid'): [2, 1, 1, 1] (Beat 1 Accent + Beats 2-4 Quarter Pulse)
+ * - Track B (4*sub steps, 'low', when sub > 1): complementary off-beat subdivisions
  */
 export function buildQuick44Tracks(subdivision = 1) {
     const sub = Number(subdivision) || 1;
@@ -189,14 +189,8 @@ export function buildQuick44Tracks(subdivision = 1) {
         {
             id: 'A',
             label: 'A',
-            voice: 'high',
-            steps: [true, false, false, false], // +--- (4)
-        },
-        {
-            id: 'B',
-            label: 'B',
             voice: 'mid',
-            steps: [false, true, true, true], // -+++ (4)
+            steps: [2, 1, 1, 1],
         },
     ];
 
@@ -205,18 +199,18 @@ export function buildQuick44Tracks(subdivision = 1) {
     }
 
     const totalSubSteps = 4 * sub; // 8 for 1/8, 12 for 1/3, 16 for 1/16
-    const cSteps = [];
+    const bSteps = [];
     for (let i = 0; i < totalSubSteps; i++) {
-        cSteps.push(i % sub !== 0);
+        bSteps.push(i % sub !== 0 ? 1 : 0);
     }
 
     return [
         ...baseTracks,
         {
-            id: 'C',
-            label: 'C',
+            id: 'B',
+            label: 'B',
             voice: 'low',
-            steps: cSteps,
+            steps: bSteps,
         },
     ];
 }
@@ -484,14 +478,17 @@ function runSchedulerTick() {
         while (nextTrackStepTimes[tIdx] < ctx.currentTime + SCHEDULE_AHEAD_SEC) {
             const stepIndex = nextTrackStepIndices[tIdx] % numSteps;
             const stepTime = nextTrackStepTimes[tIdx];
-            const isActive = Boolean(track.steps[stepIndex]);
+            const stepLevel = Number(track.steps[stepIndex]) || 0;
 
-            if (isActive) {
+            if (stepLevel > 0) {
+                const voiceToPlay =
+                    stepLevel === 2
+                        ? 'high'
+                        : track.voice || VOICE_ORDER[tIdx % VOICE_ORDER.length];
                 scheduleMetronomeClickAt(
                     ctx,
                     stepTime,
-                    track.voice ||
-                        VOICE_ORDER[tIdx % VOICE_ORDER.length],
+                    voiceToPlay,
                     metronomeState.soundMode
                 );
             }
@@ -608,7 +605,14 @@ export function setMetronomeSubdivision(nextSubdiv) {
 export function toggleMetronomeTrackStep(trackIdx, stepIdx) {
     const track = metronomeState.tracks[trackIdx];
     if (!track || stepIdx < 0 || stepIdx >= track.steps.length) return;
-    track.steps[stepIdx] = !track.steps[stepIdx];
+    const current = Number(track.steps[stepIdx]) || 0;
+    if (trackIdx === 0 && stepIdx === 0) {
+        // Beat 1 of Track A: 0 (Off) -> 1 (Normal) -> 2 (Accent) -> 0
+        track.steps[stepIdx] = (current + 1) % 3;
+    } else {
+        // All other steps: 0 (Off) <-> 1 (Normal)
+        track.steps[stepIdx] = current > 0 ? 0 : 1;
+    }
     metronomeState.subdivision = 0;
     notifyListeners();
 }
@@ -626,7 +630,7 @@ export function setMetronomeTrackStepCount(trackIdx, nextCount) {
         track.steps = track.steps.slice(0, clamped);
     } else {
         while (track.steps.length < clamped) {
-            track.steps.push(trackIdx !== 0);
+            track.steps.push(1);
         }
     }
     metronomeState.subdivision = 0;
@@ -640,7 +644,7 @@ export function setMetronomeTrackStepCount(trackIdx, nextCount) {
 export function cycleMetronomeTrackVoice(trackIdx) {
     const track = metronomeState.tracks[trackIdx];
     if (!track) return;
-    const currIdx = VOICE_ORDER.indexOf(track.voice || 'high');
+    const currIdx = VOICE_ORDER.indexOf(track.voice || 'mid');
     track.voice = VOICE_ORDER[(currIdx + 1) % VOICE_ORDER.length];
     notifyListeners();
 }
@@ -650,15 +654,13 @@ export function addMetronomeTrack() {
     const nextIdx = metronomeState.tracks.length;
     const label = String.fromCharCode(65 + nextIdx);
     const defaultVoice = VOICE_ORDER[nextIdx % VOICE_ORDER.length];
-    const masterLen = metronomeState.tracks[0]?.steps.length || 4;
-    const defaultStepsCount =
-        nextIdx === 1 ? masterLen : nextIdx === 2 ? 3 : 5;
+    const defaultStepsCount = nextIdx === 1 ? 3 : 5;
 
     metronomeState.tracks.push({
         id: label,
         label,
         voice: defaultVoice,
-        steps: new Array(defaultStepsCount).fill(true),
+        steps: new Array(defaultStepsCount).fill(1),
     });
     metronomeState.currentStepByTrack.push(metronomeState.isPlaying ? 0 : -1);
     metronomeState.subdivision = 0;
