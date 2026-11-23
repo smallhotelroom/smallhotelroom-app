@@ -1,14 +1,14 @@
 /**
  * @file src/screens/MetronomeScreen.jsx
- * @version 2.1.2
+ * @version 2.2.0
  * Full-screen Metronome with compact 5-row layout and interactive Polyrhythm Roll Editor:
  * 1) Click: Natural/Synth + Keep on exit
- * 2) Master BPMs (- / BPM / + and range slider)
+ * 2) Master BPMs (- / BPM / + and range slider; double-tap BPM to reset to 120)
  * 3) Start / Stop Metronome
  * 4) Beat subdivision: Quarter (1/4), Eighth (1/8), Triplet (1/3), Sixteenth (1/16)
  * 5) Multi-line Polyrhythm Roll Editor (MetronomeRollEditor)
  */
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Moon, Pause, Play, RotateCcw, Sun } from 'lucide-react';
 import { AppContext } from '../shared/AppContext';
 import MetronomeRollEditor from '../components/MetronomeRollEditor';
@@ -28,15 +28,26 @@ import {
     toggleMetronomeTrackStep,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.1.1';
+export const __version__ = '2.2.0';
 
 export default function MetronomeScreen({ onBack }) {
     const { darkMode, setDarkMode } = useContext(AppContext);
     const [metroState, setMetroState] = useState(() => getMetronomeState());
+    const lastBpmTapRef = useRef(0);
 
     useEffect(() => {
         return subscribeMetronomeState((st) => setMetroState(st));
     }, []);
+
+    const handleBpmTap = () => {
+        const now = Date.now();
+        if (now - lastBpmTapRef.current < 350) {
+            setMetronomeBpm(120);
+            lastBpmTapRef.current = 0;
+        } else {
+            lastBpmTapRef.current = now;
+        }
+    };
 
     const handleBack = () => {
         const latest = getMetronomeState();
@@ -190,7 +201,14 @@ export default function MetronomeScreen({ onBack }) {
                                 </button>
                             </div>
 
-                            <div style={{ textAlign: 'center' }}>
+                            <div
+                                title="Double-tap to reset to 120 BPM"
+                                onClick={handleBpmTap}
+                                style={{
+                                    textAlign: 'center',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                }}>
                                 <span style={{ fontSize: '1.85rem', fontWeight: 800 }}>
                                     {metroState.bpm}
                                 </span>
