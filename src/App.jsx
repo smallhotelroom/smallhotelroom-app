@@ -1,8 +1,8 @@
 /**
  * @file src/App.jsx
- * @version 2.5.0
+ * @version 2.6.0
  */
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { AppContext, AppProvider } from './shared/AppContext';
@@ -15,7 +15,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import TunerScreen from './screens/TunerScreen';
 import MetronomeScreen from './screens/MetronomeScreen';
 
-export const __version__ = '2.5.0';
+export const __version__ = '2.6.0';
 
 const SCREEN_TO_PATH = {
     Home: '/',
@@ -90,6 +90,53 @@ function AppShell() {
         });
     };
 
+    const openIncomingUrl = useCallback(async (rawUrl) => {
+        if (!rawUrl) return;
+        try {
+            const parsed = new URL(rawUrl);
+            const songParam = parsed.searchParams.get('song');
+            const langParam = parsed.searchParams.get('lang');
+
+            if (songParam) {
+                let res = await executeQuery(
+                    'SELECT id, origin_id FROM songs WHERE content_hash = ? LIMIT 1;',
+                    [songParam]
+                );
+                if (res.rows.length === 0 && /^\d+$/.test(songParam)) {
+                    res = await executeQuery(
+                        'SELECT id, origin_id FROM songs WHERE id = ? LIMIT 1;',
+                        [parseInt(songParam, 10)]
+                    );
+                }
+                if (res.rows.length > 0) {
+                    const row = res.rows.item(0);
+                    setNavStack([
+                        { screen: 'Home', params: {} },
+                        {
+                            screen: 'Song',
+                            params: {
+                                selectedSongId: row.id,
+                                originStr: originIdToLabel(row.origin_id),
+                                initialLang: langParam || null,
+                            },
+                        },
+                    ]);
+                }
+                return;
+            }
+
+            const screen = PATH_TO_SCREEN[normalizePath(parsed.pathname)];
+            if (screen) {
+                setNavStack([
+                    { screen: 'Home', params: {} },
+                    { screen, params: {} },
+                ]);
+            }
+        } catch (err) {
+            console.error('Failed to handle incoming app URL:', err);
+        }
+    }, []);
+
     // Browser Back / Forward support for showcase routes
     useEffect(() => {
         if (typeof window === 'undefined' || Capacitor.isNativePlatform()) {
@@ -110,56 +157,50 @@ function AppShell() {
         return () => window.removeEventListener('popstate', handlePopState);
     }, []);
 
-    // Deep-link support: `?song=<content_hash|id>&lang=<lang>`
+    // Web deep-link support: `?song=<content_hash|id>&lang=<lang>`
     useEffect(() => {
-        if (typeof window === 'undefined' || !window.location?.search) {
+        if (
+            typeof window === 'undefined' ||
+            Capacitor.isNativePlatform() ||
+            !window.location?.search
+        ) {
             return;
         }
         const params = new URLSearchParams(window.location.search);
-        const songParam = params.get('song');
-        const langParam = params.get('lang');
-        if (!songParam) {
+        if (params.get('song')) {
+            openIncomingUrl(window.location.href);
+        }
+    }, [openIncomingUrl]);
+
+    // Native Android App Links support (cold start + warm start)
+    useEffect(() => {
+        if (!Capacitor.isNativePlatform()) {
             return;
         }
+        let urlListenerHandle = null;
 
-        let cancelled = false;
-        async function openSharedSong() {
-            try {
-                let res = await executeQuery(
-                    'SELECT id, origin_id FROM songs WHERE content_hash = ? LIMIT 1;',
-                    [songParam]
-                );
-                if (res.rows.length === 0 && /^\d+$/.test(songParam)) {
-                    res = await executeQuery(
-                        'SELECT id, origin_id FROM songs WHERE id = ? LIMIT 1;',
-                        [parseInt(songParam, 10)]
-                    );
+        CapApp.getLaunchUrl()
+            .then((launch) => {
+                if (launch?.url) {
+                    openIncomingUrl(launch.url);
                 }
-                if (cancelled || res.rows.length === 0) {
-                    return;
-                }
-                const row = res.rows.item(0);
-                setNavStack([
-                    { screen: 'Home', params: {} },
-                    {
-                        screen: 'Song',
-                        params: {
-                            selectedSongId: row.id,
-                            originStr: originIdToLabel(row.origin_id),
-                            initialLang: langParam || null,
-                        },
-                    },
-                ]);
-            } catch (err) {
-                console.error('Failed to open shared song link:', err);
+            })
+            .catch(() => {});
+
+        CapApp.addListener('appUrlOpen', (event) => {
+            if (event?.url) {
+                openIncomingUrl(event.url);
             }
-        }
+        }).then((handle) => {
+            urlListenerHandle = handle;
+        });
 
-        openSharedSong();
         return () => {
-            cancelled = true;
+            if (urlListenerHandle) {
+                urlListenerHandle.remove();
+            }
         };
-    }, []);
+    }, [openIncomingUrl]);
 
     useEffect(() => {
         let listenerHandle = null;
