@@ -155,25 +155,30 @@ npx cap open ios
 
 E.g. bumping `v0.2.0` to `v0.2.1`,
 
-Manually upgrade `android/app/build.gradle`:
+Manually upgrade `android/app/build.gradle` (required for Google Play):
 ```json
 versionCode 2
 versionName "0.2.1"
 ```
 
-Then annotated tag on latest commit:
+Where:
+
+- versionCode 2 (an integer that must increment by +1 for every APK/AAB uploaded)
+- versionName "0.2.1" (the version string shown in Android App Info).
+
+Then bump `package.json` and `package-lock.json`:
 
 ```bash
-npm version v0.2.1 --no-git-tag-version # updates package.json and package-lock.json
+npm version v0.2.1 --no-git-tag-version
+```
+
+And finally create the annotated tag on latest commit and push it:
+
+```bash
 git tag -a v0.2.1 -m "v0.2.1 - <msg>"
 git push origin v0.2.1
 ```
-
-Required for Google Play `android/app/build.gradle`:
-
-- versionName "0.2.1" (the version string shown in Android App Info).
-- versionCode 2 (an integer that must increment by +1 for every APK/AAB uploaded)
-
+ 
 ## 7. Notes on syntax
 
 Syntax for custom chords section:
