@@ -153,7 +153,15 @@ npx cap open ios
 
 ## 6. How to bump version
 
-E.g. bumping `v0.2.0` to `v0.2.1`, annotated tag on latest commit:
+E.g. bumping `v0.2.0` to `v0.2.1`,
+
+Manually upgrade `android/app/build.gradle`:
+```json
+versionCode 2
+versionName "0.2.1"
+```
+
+Then annotated tag on latest commit:
 
 ```bash
 npm version v0.2.1 --no-git-tag-version # updates package.json and package-lock.json
