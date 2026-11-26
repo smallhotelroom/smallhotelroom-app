@@ -1,10 +1,12 @@
 /**
  * @file src/components/MetronomeRollEditor.jsx
- * @version 2.5.2
+ * @version 2.5.3
  * Multi-View Polyrhythm Roll Editor for the SHR Metronome:
  * - Top Control Bar: [ Circular | Landscape | Portrait ] view selector with icons beneath labels
  *   (defaults to Circular) + two-line [ Remove / Track - | Add / Track + ] buttons
  * - 3-state beat 1 on Track A: 0 = Off (hollow), 1 = Normal (track color), 2 = Accent (paired voice color + crisp ring)
+ * - Touch-friendly StepCounterPill with wider -/+ hit targets, touch-action: manipulation,
+ *   and tap-number native scroll picker (1..32)
  * - Smart Auto-Switch between Landscape and Portrait when cell dimensions get too small.
  */
 import React, { useContext, useState } from 'react';
@@ -16,12 +18,13 @@ import {
     MAX_METRONOME_TRACKS,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.5.2';
+export const __version__ = '2.5.3';
 
 const VIEW_MODE_STORAGE_KEY = 'shr_metronome_view_mode';
 const LANDSCAPE_MAX_COMFORTABLE_STEPS = 16;
 const PORTRAIT_MAX_COMFORTABLE_TRACKS = 5;
 const MIN_CELL_SIZE_PX = 26;
+const STEP_OPTIONS = Array.from({ length: MAX_METRONOME_STEPS }, (_, i) => i + 1);
 
 function ViewModeIcon({ mode }) {
     const commonProps = {
@@ -134,14 +137,23 @@ function getTrackPalette(track, trackIdx, colorTheme = 'basic') {
     return palettes[keys[trackIdx % keys.length]];
 }
 
-function StepCounterPill({ numSteps, trackIdx, onChangeTrackSteps }) {
+function StepCounterPill({
+    numSteps,
+    trackIdx,
+    onChangeTrackSteps,
+    comfortable = false,
+}) {
+    const pillHeight = comfortable ? 30 : 26;
+    const btnWidth = comfortable ? 26 : 22;
+    const numMinWidth = comfortable ? 24 : 20;
+
     return (
         <div
             style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                height: 24,
-                borderRadius: 5,
+                height: pillHeight,
+                borderRadius: 6,
                 border: '1px solid var(--border-color)',
                 background: 'var(--bg-surface)',
                 flexShrink: 0,
@@ -155,32 +167,68 @@ function StepCounterPill({ numSteps, trackIdx, onChangeTrackSteps }) {
                     onChangeTrackSteps(trackIdx, numSteps - 1)
                 }
                 title="Fewer subdivisions"
+                aria-label="Fewer subdivisions"
                 style={{
-                    width: 15,
+                    width: btnWidth,
                     height: '100%',
                     padding: 0,
                     border: 'none',
                     background: 'transparent',
                     color: 'var(--text-secondary)',
                     fontWeight: 800,
-                    fontSize: '0.75rem',
+                    fontSize: comfortable ? '0.95rem' : '0.85rem',
+                    lineHeight: 1,
                     cursor: numSteps <= 1 ? 'default' : 'pointer',
                     opacity: numSteps <= 1 ? 0.3 : 1,
+                    touchAction: 'manipulation',
                 }}>
-                -
+                −
             </button>
-            <span
-                title={`${numSteps} steps in cycle`}
+            <div
+                title={`${numSteps} steps in cycle — tap to pick`}
                 style={{
-                    minWidth: 16,
-                    textAlign: 'center',
-                    fontSize: '0.69rem',
-                    fontWeight: 800,
-                    color: 'var(--text-primary)',
-                    userSelect: 'none',
+                    position: 'relative',
+                    minWidth: numMinWidth,
+                    height: '100%',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderLeft: '1px solid var(--border-color)',
+                    borderRight: '1px solid var(--border-color)',
+                    padding: '0 3px',
                 }}>
-                {numSteps}
-            </span>
+                <span
+                    style={{
+                        fontSize: comfortable ? '0.78rem' : '0.72rem',
+                        fontWeight: 800,
+                        color: 'var(--text-primary)',
+                        userSelect: 'none',
+                        pointerEvents: 'none',
+                    }}>
+                    {numSteps}
+                </span>
+                <select
+                    aria-label="Steps in cycle"
+                    value={numSteps}
+                    onChange={(e) =>
+                        onChangeTrackSteps &&
+                        onChangeTrackSteps(trackIdx, parseInt(e.target.value, 10))
+                    }
+                    style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        opacity: 0,
+                        cursor: 'pointer',
+                    }}>
+                    {STEP_OPTIONS.map((n) => (
+                        <option key={n} value={n}>
+                            {n}
+                        </option>
+                    ))}
+                </select>
+            </div>
             <button
                 type="button"
                 disabled={numSteps >= MAX_METRONOME_STEPS}
@@ -189,18 +237,21 @@ function StepCounterPill({ numSteps, trackIdx, onChangeTrackSteps }) {
                     onChangeTrackSteps(trackIdx, numSteps + 1)
                 }
                 title="More subdivisions"
+                aria-label="More subdivisions"
                 style={{
-                    width: 15,
+                    width: btnWidth,
                     height: '100%',
                     padding: 0,
                     border: 'none',
                     background: 'transparent',
                     color: 'var(--text-secondary)',
                     fontWeight: 800,
-                    fontSize: '0.75rem',
+                    fontSize: comfortable ? '0.95rem' : '0.85rem',
+                    lineHeight: 1,
                     cursor:
                         numSteps >= MAX_METRONOME_STEPS ? 'default' : 'pointer',
                     opacity: numSteps >= MAX_METRONOME_STEPS ? 0.3 : 1,
+                    touchAction: 'manipulation',
                 }}>
                 +
             </button>
@@ -310,7 +361,7 @@ export default function MetronomeRollEditor({
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    gap: 6,
+                    gap: 8,
                 }}>
                 <svg
                     width={size}
@@ -513,7 +564,7 @@ export default function MetronomeRollEditor({
                         display: 'flex',
                         flexWrap: 'wrap',
                         justifyContent: 'center',
-                        gap: 6,
+                        gap: 8,
                         width: '100%',
                     }}>
                     {tracks.map((track, trackIdx) => {
@@ -524,7 +575,7 @@ export default function MetronomeRollEditor({
                                 style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: 3,
+                                    gap: 4,
                                 }}>
                                 <button
                                     type="button"
@@ -534,21 +585,23 @@ export default function MetronomeRollEditor({
                                     }
                                     title={`Track ${track.label} (${palette.name}) — tap to cycle click voice`}
                                     style={{
-                                        width: 22,
-                                        height: 24,
+                                        width: 26,
+                                        height: 30,
                                         padding: 0,
-                                        borderRadius: 5,
+                                        borderRadius: 6,
                                         border: `1px solid ${palette.activeBorder}`,
                                         background: palette.badgeBg,
                                         color: palette.badgeText,
                                         fontWeight: 800,
-                                        fontSize: '0.72rem',
+                                        fontSize: '0.78rem',
                                         cursor: 'pointer',
+                                        touchAction: 'manipulation',
                                     }}>
                                     {track.label ||
                                         String.fromCharCode(65 + trackIdx)}
                                 </button>
                                 <StepCounterPill
+                                    comfortable
                                     numSteps={track.steps.length}
                                     trackIdx={trackIdx}
                                     onChangeTrackSteps={
@@ -618,6 +671,7 @@ export default function MetronomeRollEditor({
                                 flexShrink: 0,
                                 cursor: 'pointer',
                                 userSelect: 'none',
+                                touchAction: 'manipulation',
                             }}>
                             {track.label || String.fromCharCode(65 + trackIdx)}
                         </button>
@@ -783,7 +837,7 @@ export default function MetronomeRollEditor({
                                     title={`Track ${track.label} (${palette.name}) — tap to cycle click voice`}
                                     style={{
                                         width: 22,
-                                        height: 24,
+                                        height: 26,
                                         padding: 0,
                                         borderRadius: 5,
                                         border: `1px solid ${palette.activeBorder}`,
@@ -792,6 +846,7 @@ export default function MetronomeRollEditor({
                                         fontWeight: 800,
                                         fontSize: '0.72rem',
                                         cursor: 'pointer',
+                                        touchAction: 'manipulation',
                                     }}>
                                     {track.label ||
                                         String.fromCharCode(65 + trackIdx)}
