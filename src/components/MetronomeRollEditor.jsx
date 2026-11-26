@@ -1,16 +1,15 @@
 /**
  * @file src/components/MetronomeRollEditor.jsx
- * @version 2.5.3
+ * @version 2.5.5
  * Multi-View Polyrhythm Roll Editor for the SHR Metronome:
  * - Top Control Bar: [ Circular | Landscape | Portrait ] view selector with icons beneath labels
- *   (defaults to Circular) + two-line [ Remove / Track - | Add / Track + ] buttons
+ *   (defaults to Circular) + neutral two-line [ Remove / Track X | Add / Track Y ] buttons
  * - 3-state beat 1 on Track A: 0 = Off (hollow), 1 = Normal (track color), 2 = Accent (paired voice color + crisp ring)
  * - Touch-friendly StepCounterPill with wider -/+ hit targets, touch-action: manipulation,
  *   and tap-number native scroll picker (1..32)
  * - Smart Auto-Switch between Landscape and Portrait when cell dimensions get too small.
  */
 import React, { useContext, useState } from 'react';
-import { Minus, Plus } from 'lucide-react';
 import { AppContext } from '../shared/AppContext';
 import {
     getAccentVoiceForTrack,
@@ -18,7 +17,7 @@ import {
     MAX_METRONOME_TRACKS,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.5.3';
+export const __version__ = '2.5.5';
 
 const VIEW_MODE_STORAGE_KEY = 'shr_metronome_view_mode';
 const LANDSCAPE_MAX_COMFORTABLE_STEPS = 16;
@@ -298,6 +297,19 @@ export default function MetronomeRollEditor({
     }
 
     const masterBeats = tracks[0]?.steps?.length || 4;
+
+    const canRemoveTrack = tracks.length > 1;
+    const canAddTrack = tracks.length < MAX_METRONOME_TRACKS;
+    const lastTrackIdx = tracks.length - 1;
+    const lastTrack = tracks[lastTrackIdx];
+    const removeTrackLetter = canRemoveTrack
+        ? lastTrack?.label || String.fromCharCode(65 + lastTrackIdx)
+        : null;
+
+    const nextTrackIdx = tracks.length;
+    const addTrackLetter = canAddTrack
+        ? String.fromCharCode(65 + nextTrackIdx)
+        : null;
 
     const handleStepCountChangeWithAutoFit = (trackIdx, nextSteps) => {
         if (onChangeTrackSteps) {
@@ -1017,9 +1029,13 @@ export default function MetronomeRollEditor({
                 <div style={{ display: 'inline-flex', gap: 4 }}>
                     <button
                         type="button"
-                        disabled={tracks.length <= 1}
+                        disabled={!canRemoveTrack}
                         onClick={onRemoveTrack}
-                        title="Remove last track"
+                        title={
+                            canRemoveTrack
+                                ? `Remove Track ${removeTrackLetter}`
+                                : 'Remove track'
+                        }
                         style={{
                             display: 'flex',
                             flexDirection: 'column',
@@ -1034,25 +1050,26 @@ export default function MetronomeRollEditor({
                             border: '1px solid var(--border-color)',
                             background: 'var(--bg-primary)',
                             color: 'var(--text-primary)',
-                            opacity: tracks.length <= 1 ? 0.35 : 1,
-                            cursor: tracks.length <= 1 ? 'default' : 'pointer',
+                            opacity: canRemoveTrack ? 1 : 0.35,
+                            cursor: canRemoveTrack ? 'pointer' : 'default',
+                            touchAction: 'manipulation',
                         }}>
                         <span>Remove</span>
-                        <span
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 2,
-                            }}>
-                            <span>Track</span>
-                            <Minus size={11} strokeWidth={2.75} aria-hidden="true" />
+                        <span>
+                            {removeTrackLetter
+                                ? `Track ${removeTrackLetter}`
+                                : 'Track'}
                         </span>
                     </button>
                     <button
                         type="button"
-                        disabled={tracks.length >= MAX_METRONOME_TRACKS}
+                        disabled={!canAddTrack}
                         onClick={handleAddTrackWithAutoFit}
-                        title="Add polyrhythm track"
+                        title={
+                            canAddTrack
+                                ? `Add Track ${addTrackLetter}`
+                                : 'Maximum tracks reached'
+                        }
                         style={{
                             display: 'flex',
                             flexDirection: 'column',
@@ -1067,24 +1084,15 @@ export default function MetronomeRollEditor({
                             border: '1px solid var(--border-color)',
                             background: 'var(--bg-primary)',
                             color: 'var(--text-primary)',
-                            opacity:
-                                tracks.length >= MAX_METRONOME_TRACKS
-                                    ? 0.35
-                                    : 1,
-                            cursor:
-                                tracks.length >= MAX_METRONOME_TRACKS
-                                    ? 'default'
-                                    : 'pointer',
+                            opacity: canAddTrack ? 1 : 0.35,
+                            cursor: canAddTrack ? 'pointer' : 'default',
+                            touchAction: 'manipulation',
                         }}>
                         <span>Add</span>
-                        <span
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 2,
-                            }}>
-                            <span>Track</span>
-                            <Plus size={11} strokeWidth={2.75} aria-hidden="true" />
+                        <span>
+                            {addTrackLetter
+                                ? `Track ${addTrackLetter}`
+                                : 'Track'}
                         </span>
                     </button>
                 </div>
