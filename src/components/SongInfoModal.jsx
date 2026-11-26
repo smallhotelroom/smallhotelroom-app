@@ -1,12 +1,12 @@
 /**
  * @file src/components/SongInfoModal.jsx
- * @version 1.4.0
+ * @version 1.5.0
  * Modal displaying song metadata, minimalist header with theme-aware Share button
  * (sharing canonical app deep links with `/song/<hash>` and optional `?lang=...`
  * via native Android Share Sheet on Capacitor or Web Share / clipboard on web),
  * Spotify / YouTube streaming links (via react-icons/fa), BPM metronome trigger,
- * deduced key, custom tuning, interactive language translation switcher
- * (e.g. "Lang: English / Español"), and featuring band links.
+ * clickable band & featuring band links, deduced key with concert-pitch hint
+ * when capo/drop is set, custom tuning, and interactive language translation switcher.
  */
 import React, { useState } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -17,7 +17,7 @@ import { transposeChordToken } from '../shared/chordTransposer.js';
 import { MetronomeIcon } from '../screens/HomeScreen';
 import { setMetronomeBpm, setMetronomePlaying } from '../shared/audioEngine';
 
-export const __version__ = '1.4.0';
+export const __version__ = '1.5.0';
 
 const DEFAULT_APP_SHARE_ORIGIN = 'https://app.smallhotelroom.com';
 
@@ -73,6 +73,26 @@ export function formatInitNoteDisplay(rawInitNote, vocalTransposition, useFlats)
     return `${baseStr} (vocal ${sign})`;
 }
 
+/**
+ * Appends a concert-pitch hint to the deduced key when a capo (> 0) or drop (< 0) is active.
+ */
+function formatDeducedKeyDisplay(deducedKeyDisplay, capo, useFlats) {
+    if (!deducedKeyDisplay) return null;
+    const baseStr = String(deducedKeyDisplay).trim();
+    const capoShift = Number(capo) || 0;
+    if (!capoShift) return baseStr;
+
+    const match = baseStr.match(/^([A-G][#b]?)(.*)$/);
+    if (!match) return baseStr;
+
+    const [, root, rest] = match;
+    const concertRoot = transposeChordToken(root, capoShift, useFlats);
+    if (!concertRoot || concertRoot === root) return baseStr;
+
+    const cleanRest = rest.replace(/\s*\([^)]*\)\s*$/, '');
+    return `${baseStr} (concert: ${concertRoot}${cleanRest})`;
+}
+
 export default function SongInfoModal({
     visible,
     songData,
@@ -101,6 +121,11 @@ export default function SongInfoModal({
     const primaryLang = parsedSections?.primaryLang || 'Original';
     const spotifyUrl = resolveSpotifyUrl(songData.spotify);
     const youtubeUrl = resolveYouTubeUrl(songData.youtube);
+    const formattedKey = formatDeducedKeyDisplay(
+        deducedKeyDisplay,
+        songData.capo,
+        songUseFlats
+    );
 
     const handleShare = async () => {
         const shareTitle = bandName ? `${songData.name} - ${bandName}` : songData.name;
@@ -258,7 +283,29 @@ export default function SongInfoModal({
                         paddingBottom: 15,
                         lineHeight: 1.6,
                     }}>
-                    {bandName && <div>Band: {bandName}</div>}
+                    {bandName && (
+                        <div>
+                            Band:{' '}
+                            {songData.band_id && onNavigate ? (
+                                <span
+                                    style={{
+                                        cursor: 'pointer',
+                                        textDecoration: 'underline',
+                                    }}
+                                    onClick={() => {
+                                        onClose();
+                                        onNavigate({
+                                            screen: 'Band',
+                                            params: { selectedBandId: songData.band_id },
+                                        });
+                                    }}>
+                                    {bandName}
+                                </span>
+                            ) : (
+                                bandName
+                            )}
+                        </div>
+                    )}
                     {songData.album && <div>Album: {songData.album}</div>}
                     {songData.track && <div>Track: {songData.track}</div>}
                     {songData.author && <div>Author: {songData.author}</div>}
@@ -314,7 +361,7 @@ export default function SongInfoModal({
                         )
                     ) : null}
                     {parsedTuning && <div>Tuning: {parsedTuning.displayStr}</div>}
-                    {deducedKeyDisplay && <div>Key: {deducedKeyDisplay}</div>}
+                    {formattedKey && <div>Key: {formattedKey}</div>}
                     {songData.init_note && (
                         <div>
                             Init note:{' '}
