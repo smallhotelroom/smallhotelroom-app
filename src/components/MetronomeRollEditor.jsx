@@ -1,12 +1,14 @@
 /**
  * @file src/components/MetronomeRollEditor.jsx
- * @version 2.4.1
+ * @version 2.5.2
  * Multi-View Polyrhythm Roll Editor for the SHR Metronome:
- * - Top Control Bar: [ Circular | Landscape | Portrait ] view selector (defaults to Circular) + [ - Line | + Line ]
+ * - Top Control Bar: [ Circular | Landscape | Portrait ] view selector with icons beneath labels
+ *   (defaults to Circular) + two-line [ Remove / Track - | Add / Track + ] buttons
  * - 3-state beat 1 on Track A: 0 = Off (hollow), 1 = Normal (track color), 2 = Accent (paired voice color + crisp ring)
  * - Smart Auto-Switch between Landscape and Portrait when cell dimensions get too small.
  */
 import React, { useContext, useState } from 'react';
+import { Minus, Plus } from 'lucide-react';
 import { AppContext } from '../shared/AppContext';
 import {
     getAccentVoiceForTrack,
@@ -14,12 +16,61 @@ import {
     MAX_METRONOME_TRACKS,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.4.1';
+export const __version__ = '2.5.2';
 
 const VIEW_MODE_STORAGE_KEY = 'shr_metronome_view_mode';
 const LANDSCAPE_MAX_COMFORTABLE_STEPS = 16;
 const PORTRAIT_MAX_COMFORTABLE_TRACKS = 5;
 const MIN_CELL_SIZE_PX = 26;
+
+function ViewModeIcon({ mode }) {
+    const commonProps = {
+        width: 14,
+        height: 14,
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        stroke: 'currentColor',
+        style: { display: 'block', flexShrink: 0 },
+        'aria-hidden': 'true',
+    };
+
+    if (mode === 'circular') {
+        return (
+            <svg {...commonProps}>
+                <circle cx="8" cy="8" r="5.5" strokeWidth="1.3" opacity="0.7" />
+                <circle cx="8" cy="2.5" r="1.4" fill="currentColor" stroke="none" />
+                <circle cx="13.5" cy="8" r="1.2" fill="currentColor" stroke="none" />
+                <circle cx="8" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
+                <circle cx="2.5" cy="8" r="1.2" fill="currentColor" stroke="none" />
+            </svg>
+        );
+    }
+
+    if (mode === 'horizontal') {
+        return (
+            <svg {...commonProps}>
+                <rect x="1.5" y="3.5" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" />
+                <rect x="6.4" y="3.5" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+                <rect x="11.3" y="3.5" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+                <rect x="1.5" y="9.3" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+                <rect x="6.4" y="9.3" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" />
+                <rect x="11.3" y="9.3" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+            </svg>
+        );
+    }
+
+    // vertical (Portrait)
+    return (
+        <svg {...commonProps}>
+            <rect x="3.5" y="1.5" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" />
+            <rect x="3.5" y="6.4" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+            <rect x="3.5" y="11.3" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+            <rect x="9.3" y="1.5" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+            <rect x="9.3" y="6.4" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" />
+            <rect x="9.3" y="11.3" width="3.2" height="3.2" rx="0.8" fill="currentColor" stroke="none" opacity="0.6" />
+        </svg>
+    );
+}
 
 function getTrackPalette(track, trackIdx, colorTheme = 'basic') {
     const isShr = colorTheme === 'shr';
@@ -844,7 +895,7 @@ export default function MetronomeRollEditor({
             <div
                 style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    alignItems: 'stretch',
                     justifyContent: 'space-between',
                     gap: 6,
                     marginBottom: 6,
@@ -882,8 +933,13 @@ export default function MetronomeRollEditor({
                                 title={m.title}
                                 onClick={() => setViewMode(m.id)}
                                 style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 3,
                                     padding: '4px 9px',
-                                    fontSize: '0.74rem',
+                                    fontSize: '0.72rem',
                                     fontWeight: 700,
                                     borderRadius: 4,
                                     border: 'none',
@@ -894,8 +950,10 @@ export default function MetronomeRollEditor({
                                         ? '#ffffff'
                                         : 'var(--text-secondary)',
                                     cursor: 'pointer',
+                                    lineHeight: 1.1,
                                 }}>
-                                {m.label}
+                                <span>{m.label}</span>
+                                <ViewModeIcon mode={m.id} />
                             </button>
                         );
                     })}
@@ -906,11 +964,17 @@ export default function MetronomeRollEditor({
                         type="button"
                         disabled={tracks.length <= 1}
                         onClick={onRemoveTrack}
-                        title="Remove bottom track line"
+                        title="Remove last track"
                         style={{
-                            padding: '4px 8px',
-                            fontSize: '0.73rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 2,
+                            padding: '4px 7px',
+                            fontSize: '0.68rem',
                             fontWeight: 700,
+                            lineHeight: 1.1,
                             borderRadius: 6,
                             border: '1px solid var(--border-color)',
                             background: 'var(--bg-primary)',
@@ -918,17 +982,32 @@ export default function MetronomeRollEditor({
                             opacity: tracks.length <= 1 ? 0.35 : 1,
                             cursor: tracks.length <= 1 ? 'default' : 'pointer',
                         }}>
-                        - Line
+                        <span>Remove</span>
+                        <span
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 2,
+                            }}>
+                            <span>Track</span>
+                            <Minus size={11} strokeWidth={2.75} aria-hidden="true" />
+                        </span>
                     </button>
                     <button
                         type="button"
                         disabled={tracks.length >= MAX_METRONOME_TRACKS}
                         onClick={handleAddTrackWithAutoFit}
-                        title="Add polyrhythm track line"
+                        title="Add polyrhythm track"
                         style={{
-                            padding: '4px 8px',
-                            fontSize: '0.73rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 2,
+                            padding: '4px 7px',
+                            fontSize: '0.68rem',
                             fontWeight: 700,
+                            lineHeight: 1.1,
                             borderRadius: 6,
                             border: '1px solid var(--border-color)',
                             background: 'var(--bg-primary)',
@@ -942,7 +1021,16 @@ export default function MetronomeRollEditor({
                                     ? 'default'
                                     : 'pointer',
                         }}>
-                        + Line
+                        <span>Add</span>
+                        <span
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 2,
+                            }}>
+                            <span>Track</span>
+                            <Plus size={11} strokeWidth={2.75} aria-hidden="true" />
+                        </span>
                     </button>
                 </div>
             </div>

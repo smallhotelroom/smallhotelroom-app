@@ -1,6 +1,6 @@
 /**
  * @file src/screens/MetronomeScreen.jsx
- * @version 2.3.2
+ * @version 2.3.3
  * Full-screen Metronome with compact 5-row layout and interactive Polyrhythm Roll Editor:
  * 1) Click: Natural/Synth + Keep on exit
  * 2) Master BPMs (- / BPM / + and range slider; double-tap BPM to reset to 120)
@@ -28,7 +28,7 @@ import {
     toggleMetronomeTrackStep,
 } from '../shared/audioEngine';
 
-export const __version__ = '2.3.2';
+export const __version__ = '2.3.3';
 
 function SubdivisionIcon({ type }) {
     const commonProps = {
@@ -427,15 +427,6 @@ export default function MetronomeScreen({ onBack }) {
                             border: '1px solid var(--border-color)',
                             background: 'var(--bg-surface)',
                         }}>
-                        <div
-                            style={{
-                                fontSize: '0.82rem',
-                                fontWeight: 700,
-                                color: 'var(--text-secondary)',
-                                marginBottom: 8,
-                            }}>
-                            Beat subdivision
-                        </div>
                         <div
                             style={{
                                 display: 'grid',
