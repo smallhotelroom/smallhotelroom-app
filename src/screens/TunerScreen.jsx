@@ -1,13 +1,14 @@
 /**
  * @file src/screens/TunerScreen.jsx
- * @version 1.3.1
+ * @version 1.4.1
  * Single-instrument Reference Ear Tuner with horizontal instrument switcher
  * (Guitar 6/7/8, Ukulele, Bass 4/5/6, Violin/Mandolin, Sax/Winds, Chromatic with octave & span controls,
- * and custom Frequency generator), Natural/Synth tone selector, optional hands-free Repeat Loop,
+ * and custom Frequency generator), Drop/Capo semitone shifter for fretted instruments,
+ * Natural/Synth tone selector, optional hands-free Repeat Loop,
  * and theme-aware accent styling (Small Hotel Room / Basic).
  */
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Moon, Play, Repeat, Square, Sun, Volume2 } from 'lucide-react';
+import { ArrowLeft, Moon, Play, Repeat, RotateCcw, Square, Sun, Volume2 } from 'lucide-react';
 import { AppContext } from '../shared/AppContext';
 import {
     SAX_WINDS_NOTES,
@@ -19,15 +20,20 @@ import {
     playNoteFrequency,
 } from '../shared/audioEngine';
 
-export const __version__ = '1.3.1';
+export const __version__ = '1.4.1';
 
 const TUNER_SOUND_MODE_KEY = 'shr_tuner_sound_mode';
 const TUNER_INSTRUMENT_KEY = 'shr_tuner_instrument';
 const TUNER_GUITAR_STRINGS_KEY = 'shr_tuner_guitar_strings';
 const TUNER_BASS_STRINGS_KEY = 'shr_tuner_bass_strings';
+const TUNER_SEMITONE_SHIFT_KEY = 'shr_tuner_semitone_shift';
 const TUNER_OCTAVE_KEY = 'shr_tuner_chromatic_octave';
 const TUNER_OCTAVE_SPAN_KEY = 'shr_tuner_chromatic_span';
 const TUNER_CUSTOM_FREQ_KEY = 'shr_tuner_custom_freq';
+
+const MIN_SEMITONE_SHIFT = -5;
+const MAX_SEMITONE_SHIFT = 7;
+const SHIFT_SUPPORTED_INSTRUMENTS = new Set(['guitar', 'ukulele', 'bass']);
 
 const MIN_CUSTOM_FREQ = 20;
 const MAX_CUSTOM_FREQ = 2000;
@@ -41,7 +47,8 @@ const FREQ_PRESETS = [
     { freq: 444, label: 'Bright' },
 ];
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_NAMES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_NAMES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 function clampFreq(val) {
     const num = Number(val);
@@ -65,10 +72,42 @@ function describeNearestNote(freq) {
     const midiFloat = 69 + 12 * Math.log2(freq / 440);
     const nearestMidi = Math.round(midiFloat);
     const cents = Math.round((midiFloat - nearestMidi) * 100);
-    const noteName = NOTE_NAMES[((nearestMidi % 12) + 12) % 12];
+    const noteName = NOTE_NAMES_SHARP[((nearestMidi % 12) + 12) % 12];
     const octave = Math.floor(nearestMidi / 12) - 1;
     const centsStr = cents > 0 ? `+${cents}¢` : `${cents}¢`;
     return `${noteName}${octave} (${centsStr})`;
+}
+
+/**
+ * Applies a uniform semitone shift (negative = Drop, positive = Capo)
+ * to a list of string definitions. Kept separate so future alt-tuning presets
+ * can plug in right before this step.
+ */
+function applySemitoneShift(strings, shift) {
+    const delta = Number(shift) || 0;
+    if (delta === 0) return strings;
+
+    const noteTable = delta < 0 ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP;
+    return strings.map((s) => {
+        const shiftedMidi = s.midi + delta;
+        const noteName = noteTable[((shiftedMidi % 12) + 12) % 12];
+        const octave = Math.floor(shiftedMidi / 12) - 1;
+        const freq = 440 * Math.pow(2, (shiftedMidi - 69) / 12);
+        return {
+            ...s,
+            id: `${s.id}-s${delta}`,
+            midi: shiftedMidi,
+            note: `${noteName}${octave}`,
+            label: `${s.string}${noteName}`,
+            freq,
+        };
+    });
+}
+
+function formatShiftLabel(shift) {
+    if (shift > 0) return `Capo ${shift}`;
+    if (shift < 0) return `Drop ${-shift}`;
+    return 'Standard';
 }
 
 const GUITAR_VARIANT_SUBTITLES = {
@@ -153,6 +192,13 @@ export default function TunerScreen({ onBack }) {
         const saved = parseInt(localStorage.getItem(TUNER_BASS_STRINGS_KEY), 10);
         return [4, 5, 6].includes(saved) ? saved : 4;
     });
+    const [semitoneShift, setSemitoneShift] = useState(() => {
+        const saved = parseInt(localStorage.getItem(TUNER_SEMITONE_SHIFT_KEY), 10);
+        if (!Number.isNaN(saved) && saved >= MIN_SEMITONE_SHIFT && saved <= MAX_SEMITONE_SHIFT) {
+            return saved;
+        }
+        return 0;
+    });
     const [chromaticOctave, setChromaticOctave] = useState(() => {
         const saved = parseInt(localStorage.getItem(TUNER_OCTAVE_KEY), 10);
         return !Number.isNaN(saved) && saved >= 2 && saved <= 6 ? saved : 4;
@@ -171,6 +217,7 @@ export default function TunerScreen({ onBack }) {
     const stopVoiceRef = useRef(null);
     const loopIntervalRef = useRef(null);
     const highlightTimeoutRef = useRef(null);
+    const lastShiftTapRef = useRef(0);
 
     const stopCurrentSound = () => {
         if (loopIntervalRef.current) {
@@ -218,6 +265,24 @@ export default function TunerScreen({ onBack }) {
         localStorage.setItem(TUNER_BASS_STRINGS_KEY, String(count));
     };
 
+    const updateSemitoneShift = (nextShift) => {
+        const clamped = Math.max(MIN_SEMITONE_SHIFT, Math.min(MAX_SEMITONE_SHIFT, nextShift));
+        if (clamped === semitoneShift) return;
+        stopCurrentSound();
+        setSemitoneShift(clamped);
+        localStorage.setItem(TUNER_SEMITONE_SHIFT_KEY, String(clamped));
+    };
+
+    const handleShiftLabelTap = () => {
+        const now = Date.now();
+        if (now - lastShiftTapRef.current < 350) {
+            updateSemitoneShift(0);
+            lastShiftTapRef.current = 0;
+        } else {
+            lastShiftTapRef.current = now;
+        }
+    };
+
     const handleOctaveChange = (delta) => {
         const maxOct = chromaticSpan === 2 ? 5 : 6;
         const nextOct = Math.max(2, Math.min(maxOct, chromaticOctave + delta));
@@ -250,12 +315,14 @@ export default function TunerScreen({ onBack }) {
     const activeInstrument =
         INSTRUMENT_TABS.find((t) => t.id === instrumentId) || INSTRUMENT_TABS[0];
 
+    const supportsShift = SHIFT_SUPPORTED_INSTRUMENTS.has(instrumentId);
+
     const currentNotes = useMemo(() => {
         switch (instrumentId) {
             case 'ukulele':
-                return UKULELE_STRINGS;
+                return applySemitoneShift(UKULELE_STRINGS, semitoneShift);
             case 'bass':
-                return getBassStrings(bassStringCount);
+                return applySemitoneShift(getBassStrings(bassStringCount), semitoneShift);
             case 'violin':
                 return VIOLIN_STRINGS;
             case 'winds':
@@ -266,12 +333,13 @@ export default function TunerScreen({ onBack }) {
                 return [];
             case 'guitar':
             default:
-                return getGuitarStrings(guitarStringCount);
+                return applySemitoneShift(getGuitarStrings(guitarStringCount), semitoneShift);
         }
     }, [
         instrumentId,
         guitarStringCount,
         bassStringCount,
+        semitoneShift,
         chromaticOctave,
         chromaticSpan,
     ]);
@@ -386,14 +454,22 @@ export default function TunerScreen({ onBack }) {
               ? `Bass (${bassStringCount} Strings)`
               : activeInstrument.title;
 
+    const shiftedNotesSubtitle =
+        supportsShift && semitoneShift !== 0
+            ? `${formatShiftLabel(semitoneShift)} · ${currentNotes
+                  .map((n) => n.note.replace(/[0-9]+$/, ''))
+                  .join(' ')}`
+            : null;
+
     const activeSubtitle =
-        instrumentId === 'guitar'
+        shiftedNotesSubtitle ||
+        (instrumentId === 'guitar'
             ? GUITAR_VARIANT_SUBTITLES[guitarStringCount]
             : instrumentId === 'bass'
               ? BASS_VARIANT_SUBTITLES[bassStringCount]
               : instrumentId === 'chromatic'
                 ? octaveRangeLabel
-                : activeInstrument.subtitle;
+                : activeInstrument.subtitle);
 
     const gridColumns =
         instrumentId === 'bass' && bassStringCount === 6
@@ -670,6 +746,79 @@ export default function TunerScreen({ onBack }) {
                                     {count}-String
                                 </button>
                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Drop / Capo Semitone Shifter (Guitar, Ukulele, Bass) */}
+                {supportsShift && (
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-surface)',
+                            marginBottom: 12,
+                        }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                            Drop / Capo:
+                        </span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            {semitoneShift !== 0 && (
+                                <button
+                                    type="button"
+                                    className="icon-btn"
+                                    title="Reset to Standard"
+                                    aria-label="Reset to Standard"
+                                    onClick={() => updateSemitoneShift(0)}
+                                    style={{ padding: 4 }}>
+                                    <RotateCcw size={16} />
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={semitoneShift <= MIN_SEMITONE_SHIFT}
+                                style={{
+                                    padding: '4px 10px',
+                                    opacity: semitoneShift <= MIN_SEMITONE_SHIFT ? 0.45 : 1,
+                                }}
+                                onClick={() => updateSemitoneShift(semitoneShift - 1)}>
+                                −
+                            </button>
+                            <span
+                                title="Double-tap to reset to Standard"
+                                onClick={handleShiftLabelTap}
+                                style={{
+                                    minWidth: 74,
+                                    padding: '4px 6px',
+                                    textAlign: 'center',
+                                    fontWeight: 800,
+                                    fontSize: '0.86rem',
+                                    color:
+                                        semitoneShift !== 0
+                                            ? 'var(--accent-color)'
+                                            : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                }}>
+                                {formatShiftLabel(semitoneShift)}
+                            </span>
+                            <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={semitoneShift >= MAX_SEMITONE_SHIFT}
+                                style={{
+                                    padding: '4px 10px',
+                                    opacity: semitoneShift >= MAX_SEMITONE_SHIFT ? 0.45 : 1,
+                                }}
+                                onClick={() => updateSemitoneShift(semitoneShift + 1)}>
+                                +
+                            </button>
                         </div>
                     </div>
                 )}
