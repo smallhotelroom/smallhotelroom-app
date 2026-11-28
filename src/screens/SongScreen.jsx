@@ -1,6 +1,6 @@
 /**
  * @file src/screens/SongScreen.jsx
- * @version 3.5.2
+ * @version 3.5.3
  */
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Music, Sliders, Square } from 'lucide-react';
@@ -41,7 +41,7 @@ import {
     triggerPatternStepOnChord,
 } from '../shared/songChordPlayer';
 
-export const __version__ = '3.5.2';
+export const __version__ = '3.5.3';
 
 export default function SongScreen({ routeParams, onNavigate, onBack }) {
     const { selectedSongId, originStr, initialLang = null } = routeParams;
@@ -733,6 +733,7 @@ export default function SongScreen({ routeParams, onNavigate, onBack }) {
                         scrollContainerRef={scrollContainerRef}
                         speedMenuOpen={speedMenuOpen}
                         setSpeedMenuOpen={setSpeedMenuOpen}
+                        targetDurationSeconds={songData?.duration}
                     />
 
                     <button className="btn-primary" onClick={() => setSongModalVisible(true)}>

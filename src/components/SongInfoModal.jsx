@@ -1,11 +1,11 @@
 /**
  * @file src/components/SongInfoModal.jsx
- * @version 1.5.0
+ * @version 1.5.1
  * Modal displaying song metadata, minimalist header with theme-aware Share button
  * (sharing canonical app deep links with `/song/<hash>` and optional `?lang=...`
  * via native Android Share Sheet on Capacitor or Web Share / clipboard on web),
  * Spotify / YouTube streaming links (via react-icons/fa), BPM metronome trigger,
- * clickable band & featuring band links, deduced key with concert-pitch hint
+ * song duration, clickable band & featuring band links, deduced key with concert-pitch hint
  * when capo/drop is set, custom tuning, and interactive language translation switcher.
  */
 import React, { useState } from 'react';
@@ -14,10 +14,11 @@ import { Share } from '@capacitor/share';
 import { Check, Share2, X } from 'lucide-react';
 import { FaSpotify, FaYoutube } from 'react-icons/fa';
 import { transposeChordToken } from '../shared/chordTransposer.js';
+import { formatDurationSeconds } from '../shared/songSchema.js';
 import { MetronomeIcon } from '../screens/HomeScreen';
 import { setMetronomeBpm, setMetronomePlaying } from '../shared/audioEngine';
 
-export const __version__ = '1.5.0';
+export const __version__ = '1.5.1';
 
 const DEFAULT_APP_SHARE_ORIGIN = 'https://app.smallhotelroom.com';
 
@@ -121,6 +122,7 @@ export default function SongInfoModal({
     const primaryLang = parsedSections?.primaryLang || 'Original';
     const spotifyUrl = resolveSpotifyUrl(songData.spotify);
     const youtubeUrl = resolveYouTubeUrl(songData.youtube);
+    const formattedDuration = formatDurationSeconds(songData.duration);
     const formattedKey = formatDeducedKeyDisplay(
         deducedKeyDisplay,
         songData.capo,
@@ -353,6 +355,7 @@ export default function SongInfoModal({
                             </button>
                         </div>
                     )}
+                    {formattedDuration && <div>Duration: {formattedDuration}</div>}
                     {songData.capo ? (
                         songData.capo < 1 ? (
                             <div>Drop: {-songData.capo}</div>

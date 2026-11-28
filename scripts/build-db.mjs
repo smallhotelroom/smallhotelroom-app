@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * @file scripts/build-db.mjs
- * @version 5.5.1
+ * @version 5.6.0
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +24,7 @@ import {
 import { parseShrConfigYaml } from '../src/shared/shrConfig.js';
 import { hasCrawlerSongAndChords } from '../src/shared/crawlerTransposer.js';
 
-export const __version__ = '5.5.1';
+export const __version__ = '5.6.0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -89,6 +89,18 @@ function validateSongFrontmatterAndSections(
                     break;
                 }
             }
+        }
+    }
+
+    if (
+        frontmatterData.duration !== undefined &&
+        frontmatterData.duration !== null &&
+        typeof schemaMod.parseDurationSeconds === 'function'
+    ) {
+        const dRes = schemaMod.parseDurationSeconds(frontmatterData.duration);
+        if (!dRes.valid) {
+            const dLine = keyLines.duration || 1;
+            errors.push(`${formatClickableLocation(fullPath, dLine, 1)} — ${dRes.error}`);
         }
     }
 
@@ -464,6 +476,11 @@ function buildLayerDatabase(
                 if (song.drop !== undefined && song.drop !== null) {
                     capo = -Number(song.drop);
                 }
+                const durationRes =
+                    typeof schemaMod.parseDurationSeconds === 'function'
+                        ? schemaMod.parseDurationSeconds(song.duration)
+                        : { valid: true, seconds: null };
+                const duration = durationRes.valid ? durationRes.seconds : null;
 
                 const falsetto = song.falsetto ?? null;
                 const highest = song.highest ?? null;
@@ -504,9 +521,9 @@ function buildLayerDatabase(
                 db.run(
                     `INSERT INTO songs (
                         content_hash, name, band_id, origin_id, has_chords, search_norm, album, author, bpm, capo,
-                        falsetto, highest, init_note, isrc, key, lang, license, musicians,
+                        duration, falsetto, highest, init_note, isrc, key, lang, license, musicians,
                         spotify, time_signature, track, tuning, url, writer, youtube, contents
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
                     [
                         contentHash,
                         songName,
@@ -518,6 +535,7 @@ function buildLayerDatabase(
                         author,
                         bpm,
                         capo,
+                        duration,
                         falsetto,
                         highest,
                         initNote,

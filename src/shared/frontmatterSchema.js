@@ -1,12 +1,13 @@
 /**
  * @file src/shared/frontmatterSchema.js
- * @version 1.0.0
+ * @version 1.1.0
  * Frontmatter YAML parser, key definitions, and strict project validation.
  * `artist` is optional and overrides the filename-derived artist (e.g. "cancionesdejuan", "AC/DC").
+ * `duration` accepts `M:SS`, `H:MM:SS`, or raw seconds and is stored as integer seconds.
  */
 import { parseInstrumentTuning } from './chordHarmony.js';
 
-export const __version__ = '1.0.0';
+export const __version__ = '1.1.0';
 
 export const BASE_REQUIRED_KEYS = [];
 
@@ -21,6 +22,7 @@ export const STRICT_PROJECT_KEYS = [
   'album',
   'author',
   'bpm',
+  'duration',
   'isrc',
   'lang',
   'license',
@@ -50,6 +52,84 @@ export const TREATED_KEYS = Array.from(
     'youtube',
   ])
 ).sort();
+
+/**
+ * Parses a song duration from `M:SS`, `H:MM:SS`, or positive seconds (number/string)
+ * into integer seconds.
+ */
+export const parseDurationSeconds = (rawVal) => {
+  if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') {
+    return { valid: true, seconds: null, error: null };
+  }
+
+  if (typeof rawVal === 'number') {
+    if (!Number.isFinite(rawVal) || rawVal <= 0) {
+      return {
+        valid: false,
+        seconds: null,
+        error: `Invalid duration '${rawVal}': expected positive seconds or M:SS (e.g. 3:45).`,
+      };
+    }
+    return { valid: true, seconds: Math.round(rawVal), error: null };
+  }
+
+  const str = String(rawVal).trim();
+
+  if (/^\d+(\.\d+)?$/.test(str)) {
+    const secs = Math.round(parseFloat(str));
+    if (secs > 0) {
+      return { valid: true, seconds: secs, error: null };
+    }
+    return {
+      valid: false,
+      seconds: null,
+      error: `Invalid duration '${rawVal}': must be greater than 0.`,
+    };
+  }
+
+  const parts = str.split(':');
+  if (parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d{1,2}$/.test(parts[1])) {
+    const mins = parseInt(parts[0], 10);
+    const secs = parseInt(parts[1], 10);
+    if (secs < 60 && mins * 60 + secs > 0) {
+      return { valid: true, seconds: mins * 60 + secs, error: null };
+    }
+  } else if (
+    parts.length === 3 &&
+    /^\d+$/.test(parts[0]) &&
+    /^\d{1,2}$/.test(parts[1]) &&
+    /^\d{1,2}$/.test(parts[2])
+  ) {
+    const hrs = parseInt(parts[0], 10);
+    const mins = parseInt(parts[1], 10);
+    const secs = parseInt(parts[2], 10);
+    if (mins < 60 && secs < 60 && hrs * 3600 + mins * 60 + secs > 0) {
+      return { valid: true, seconds: hrs * 3600 + mins * 60 + secs, error: null };
+    }
+  }
+
+  return {
+    valid: false,
+    seconds: null,
+    error: `Invalid duration '${rawVal}': expected M:SS (e.g. 3:45), H:MM:SS, or positive seconds.`,
+  };
+};
+
+/**
+ * Formats integer seconds into `M:SS` (or `H:MM:SS` if >= 1 hour).
+ */
+export const formatDurationSeconds = (rawSeconds) => {
+  const total = Math.round(Number(rawSeconds) || 0);
+  if (total <= 0) return null;
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const secStr = String(secs).padStart(2, '0');
+  if (hrs > 0) {
+    return `${hrs}:${String(mins).padStart(2, '0')}:${secStr}`;
+  }
+  return `${mins}:${secStr}`;
+};
 
 export const validateAlphabeticalOrder = (keys) => {
   const sortedKeys = [...keys].sort();
@@ -93,6 +173,13 @@ export const validateFrontmatter = (frontmatterData, rawFileName = '') => {
     errors.push(
       `Keys are not in alphabetical order. Expected: \n${expected.join('\n')}`
     );
+  }
+
+  if (frontmatterData.duration !== undefined && frontmatterData.duration !== null) {
+    const dCheck = parseDurationSeconds(frontmatterData.duration);
+    if (!dCheck.valid) {
+      errors.push(dCheck.error);
+    }
   }
 
   if (frontmatterData.tuning) {

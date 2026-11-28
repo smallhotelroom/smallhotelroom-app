@@ -1,12 +1,12 @@
 /**
  * @file src/shared/dbMerger.js
- * @version 1.11.0
+ * @version 1.12.0
  */
 import { hasCrawlerSongAndChords } from './crawlerTransposer.js';
 
-export const __version__ = '1.11.0';
+export const __version__ = '1.12.0';
 
-export const DB_SCHEMA_VERSION = '4';
+export const DB_SCHEMA_VERSION = '5';
 
 const PRIORITY_PLAYLIST_ORDER = ['small hotel room', 'cancionesdejuan'];
 
@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS songs (
     author TEXT,
     bpm INTEGER,
     capo INTEGER,
+    duration INTEGER,
     falsetto TEXT,
     highest TEXT,
     init_note TEXT,
@@ -206,7 +207,7 @@ export function wildcardToRegExp(pattern) {
  * then "cancionesdejuan") followed by all remaining playlists alphabetically, and
  * sorts songs within each playlist alphabetically by band name then song name.
  */
-export function sortPlaylistsAndSongsAlphabetically(db) {
+export function sortPlaylistsAndSongsAlphabetically(outDb) {
     const playlists = queryObjects(db, 'SELECT id, name, search_norm FROM playlists;');
     if (playlists.length === 0) {
         return;
@@ -526,9 +527,9 @@ export function mergeDatabasesInPriorityOrder(SQL, sourceDbs, mergedId = 'merged
             outDb.run(
                 `INSERT INTO songs (
                     content_hash, name, band_id, origin_id, has_chords, search_norm, album, author, bpm, capo,
-                    falsetto, highest, init_note, isrc, key, lang, license, musicians,
+                    duration, falsetto, highest, init_note, isrc, key, lang, license, musicians,
                     spotify, time_signature, track, tuning, url, writer, youtube, contents
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
                 [
                     s.content_hash ?? null,
                     s.name,
@@ -540,6 +541,7 @@ export function mergeDatabasesInPriorityOrder(SQL, sourceDbs, mergedId = 'merged
                     s.author ?? null,
                     s.bpm ?? null,
                     s.capo ?? null,
+                    s.duration ?? null,
                     s.falsetto ?? null,
                     s.highest ?? null,
                     s.init_note ?? null,
@@ -597,7 +599,7 @@ export function mergeDatabasesInPriorityOrder(SQL, sourceDbs, mergedId = 'merged
         }
     }
 
-    sortPlaylistsAndSongsAlphabetically(outDb);
+    sortPlaylistsAndSongsAlphabetically(db);
     outDb.run(INDEX_SQL);
     outDb.run(UPDATE_BANDS_HAS_CHORDS_SQL);
     populateDatabaseMeta(outDb, { layerId: mergedId, packName: mergedId });

@@ -1,22 +1,24 @@
 /**
  * @file src/components/AutoScrollControl.jsx
- * @version 1.0.1
+ * @version 1.1.0
  * Self-contained 60fps Auto-Scroll header pill and vertical speed popover for SongScreen.
+ * Uses the song's `targetDurationSeconds` when provided, falling back to 3:30 (210s).
  */
 import React, { useEffect, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { APP_DEFAULTS } from '../shared/AppContext';
 
-export const __version__ = '1.0.1';
+export const __version__ = '1.1.0';
 
 const SCROLL_SPEED_STORAGE_KEY = 'shr_scroll_speed';
-const TARGET_DURATION_SECONDS =
+const DEFAULT_TARGET_DURATION_SECONDS =
     APP_DEFAULTS.scroll_target_duration_seconds || 210; // 3 minutes 30 seconds at 1.0x
 
 export default function AutoScrollControl({
     scrollContainerRef,
     speedMenuOpen,
     setSpeedMenuOpen,
+    targetDurationSeconds = null,
 }) {
     const [autoScrollActive, setAutoScrollActive] = useState(false);
     const [scrollSpeed, setScrollSpeed] = useState(() => {
@@ -25,6 +27,11 @@ export default function AutoScrollControl({
             ? saved
             : APP_DEFAULTS.default_scroll_speed ?? 1.0;
     });
+
+    const effectiveDurationSeconds =
+        Number(targetDurationSeconds) > 0
+            ? Number(targetDurationSeconds)
+            : DEFAULT_TARGET_DURATION_SECONDS;
 
     const updateScrollSpeed = (nextVal) => {
         const clamped = Math.max(0.0, Math.min(3.0, Math.round(nextVal * 10) / 10));
@@ -36,7 +43,7 @@ export default function AutoScrollControl({
         setAutoScrollActive((prev) => !prev);
     };
 
-    // Smooth 60fps Auto-Scroll loop dynamically scaled so 1.0x = 3:30 (210s) at current zoom level
+    // Smooth 60fps Auto-Scroll loop dynamically scaled so 1.0x = song duration (or 3:30 default)
     useEffect(() => {
         if (!autoScrollActive) {
             return;
@@ -57,7 +64,7 @@ export default function AutoScrollControl({
                 );
                 if (totalScrollableDistance > 0 && scrollSpeed > 0) {
                     const basePixelsPerSecond =
-                        totalScrollableDistance / TARGET_DURATION_SECONDS;
+                        totalScrollableDistance / effectiveDurationSeconds;
                     const pixelsPerSecond = basePixelsPerSecond * scrollSpeed;
 
                     subPixelAccumulator += pixelsPerSecond * dt;
@@ -78,7 +85,7 @@ export default function AutoScrollControl({
 
         animationFrameId = requestAnimationFrame(step);
         return () => cancelAnimationFrame(animationFrameId);
-    }, [autoScrollActive, scrollSpeed, scrollContainerRef]);
+    }, [autoScrollActive, scrollSpeed, scrollContainerRef, effectiveDurationSeconds]);
 
     return (
         <div className="autoscroll-anchor">
